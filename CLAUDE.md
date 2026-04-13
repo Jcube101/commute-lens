@@ -236,3 +236,33 @@ OsmAnd speed is in m/s under the osmand.net namespace. Multiply by 3.6 for km/h.
 - Open-Meteo: free, no API key, historical hourly weather by lat/lon
 - Folium: Python library for interactive Leaflet maps
 - 4 real commute GPX files in data/gpx/ ready for parser testing
+
+---
+
+## Scenario Handling Reference
+
+### How each scenario is handled — sheet and parser
+
+| Scenario | Record GPX? | Sheet entry? | Parser behaviour | Notes column |
+|---|---|---|---|---|
+| Normal commute | Yes | 2 rows (one per leg) | Full trip extracted | — |
+| Petrol bunk stop (<10 min) | Yes, keep recording | Normal | Auto-split files merged | — |
+| Forgot to start at home | Yes, from wherever | Normal | Flagged partial=True | Optional: "partial recording" |
+| Sent to mall mid-trip (Scenario C) | Yes | 1 row Home->Office | Auto-detected from GPX path | — |
+| Shooting range / football (>30 min) | Stop, restart after | Normal for commute leg | Clean anchor-to-anchor trip | — |
+| Detour trip, no clean return GPX | Stop before detour | 1 row if commute leg exists | Detour portion discarded | "Detour" in Day Type |
+| Only one leg recorded | Yes | 1 row for that leg only | That leg processed independently | — |
+| WFH day | No | No entry needed | Nothing to process | — |
+| No recording at all | No | Optional: mileage only | No GPS data, mileage row kept for fuel trend | "no recording" |
+
+### Independence of legs
+- Outbound and return trips are fully independent records
+- A missing return GPX does not affect outbound analysis and vice versa
+- Missing legs show up only as thinner data for that direction — no errors, no corruption
+- Consistently missing one direction means that direction's departure time analysis will be less reliable
+
+### Day Type dropdown values (updated)
+Normal / Post-Holiday / Pre-Holiday / WFH / Detour / Other
+
+"Detour" signals that the return GPX is missing because of a deliberate stop — not a recording failure.
+Update this in Google Sheets: Data -> Data validation -> column D -> edit list.
