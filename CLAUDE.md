@@ -220,17 +220,18 @@ file, the old CSV row is removed and replaced with the merged result.
 - [x] GitHub repo created: github.com/Jcube101/commute-lens
 - [x] Folder structure created locally
 - [x] config.yaml written locally (gitignored)
-- [x] config.example.yaml committed with placeholder values only
+- [x] config.example.yaml committed with full structure and inline comments
 - [x] .gitignore covers config.yaml, data/gpx/, outputs/
 - [x] Initial commit pushed
 - [x] Recording rules defined (30 min threshold, partial trip handling, detour filtering)
 - [x] Short-stop merge logic defined for petrol bunk splits
+- [x] parser.py — GPX reader, trip classifier, merger, haversine, speed extraction, parking detection, partial flag, mid-trip stop detection, incremental processing
+- [x] Parser tested against 5 real GPX files — classification verified, stop detection confirmed on Apr 14 trip (65.2 min shooting range stop correctly stripped)
+- [x] requirements.txt created with Phase 1 deps
 
 ### To Do
 
-#### Phase 1 — Foundation (Claude Code, start here)
-- [ ] parser.py — GPX reader, trip classifier, merger, haversine, speed extraction, parking detection, partial flag
-- [ ] Test parser against 4 real commute GPX files in data/gpx/ — verify output CSV
+#### Phase 1 — Foundation
 - [ ] sheet_log.csv — export from Google Sheets, confirm join works on date + direction
 
 #### Phase 2 — Enrichment (after parser verified)
@@ -261,7 +262,8 @@ file, the old CSV row is removed and replaced with the merged result.
 - Minimum trips before analysis meaningful: 40
 - Open-Meteo: free, no API key, historical hourly weather by lat/lon
 - Folium: Python library for interactive Leaflet maps
-- 4 real commute GPX files in data/gpx/ ready for parser testing
+- 5 real GPX files processed: 3 classified (1 valid return, 2 partial), 1 merged+discarded (unrelated), 1 road trip partial (Return from Kolar)
+- master_trips.csv columns: filename, date, direction, departure_time, arrival_time, duration_min, distance_km, avg_speed_kmh, parking, partial, scenario_c, stop_detected, stop_duration_mins, adjusted_duration_mins, point_count
 
 ---
 
