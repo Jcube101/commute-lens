@@ -161,6 +161,32 @@ merge them into one trip. Handles petrol bunk auto-splits cleanly.
 ### Speed extraction
 OsmAnd speed is in m/s under the osmand.net namespace. Multiply by 3.6 for km/h.
 
+### Mid-trip stop detection
+OsmAnd uses displacement-based recording (10m threshold). When the car is stationary,
+the GPS stops logging entirely — so a stop appears as a **time gap** between two
+consecutive points at nearly the same coordinates, not as a sequence of slow-speed points.
+
+A gap is flagged as a mid-trip stop when ALL of:
+- Time gap > `stop_min_minutes` (default 20 min, configurable in config.yaml)
+- Spatial displacement < 150 m (car stayed put)
+- Speed at the point before the gap < 15 km/h (car was slowing, not cruising)
+- Midpoint not within any anchor radius (not arriving at HOME/OFFICE/MALL)
+
+Fields added to CSV:
+- `stop_detected` — True/False
+- `stop_duration_mins` — total time in detected stops (summed if multiple)
+- `adjusted_duration_mins` — duration_min minus stop_duration_mins
+
+### Anchor tie-breaking
+When a trip start point falls within the radius of both OFFICE and MALL
+(they are close together), the closer anchor wins for the parking field.
+
+### Incremental processing
+Processed GPX filenames are tracked in `outputs/processed.json`. Each run
+only parses new files and appends to master_trips.csv rather than rewriting it.
+Re-merge edge case: if a new file is adjacent (<30 min gap) to an already-processed
+file, the old CSV row is removed and replaced with the merged result.
+
 ---
 
 ## Full Pipeline (main.py)
