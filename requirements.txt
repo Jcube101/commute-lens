@@ -1,0 +1,8 @@
+# Phase 1 — parser (GPX ingestion and classification)
+pyyaml>=6.0
+
+# Phase 2 — enrichment (weather, clustering, full pipeline)
+# requests
+# pandas
+# scikit-learn
+# folium

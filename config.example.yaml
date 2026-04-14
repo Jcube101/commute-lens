@@ -1,0 +1,30 @@
+anchors:
+  home:
+    lat: YOUR_HOME_LAT
+    lon: YOUR_HOME_LON
+    radius_m: 300
+  office:
+    lat: YOUR_OFFICE_LAT
+    lon: YOUR_OFFICE_LON
+    radius_m: 300
+  mall:
+    name: YOUR_MALL_NAME
+    lat: YOUR_MALL_LAT
+    lon: YOUR_MALL_LON
+    radius_m: 300
+
+vehicle:
+  name: YOUR_VEHICLE_NAME
+  arai_kmpl: 19.2
+
+thresholds:
+  min_trip_points: 10      # fewer points than this → discard (too short / GPS glitch)
+  gap_split_minutes: 10    # OsmAnd auto-split gap setting (informational)
+  slow_speed_kmh: 15       # reserved for future heatmap colouring
+  stop_min_minutes: 20     # gap longer than this (with small displacement) = mid-trip stop
+
+paths:
+  gpx_dir: data/gpx/
+  sheet_log: data/reference/sheet_log.csv
+  petrol_prices: data/reference/petrol_prices.csv
+  outputs: outputs/
