@@ -32,6 +32,12 @@ Designed as a public GitHub project and portfolio piece.
 - **Route labels** will be descriptive (e.g. "Via ORR") not arbitrary letters
 - **config.yaml in .gitignore** — all personal coordinates and location data lives here only
 - **data/gpx/ and outputs/ in .gitignore** — personal data stays local
+- **GPX sync is manual**: user copies files from `G:\My Drive\Miscellaneous\GPX` to `data/gpx/` before running the pipeline. main.py does NOT read from G: drive.
+- **Sheet CSV fetched live**: `sheet_csv_url` in config.yaml points to the Google Sheets CSV export. Fetched fresh on every run via requests.get(). Sheet is set to "Anyone with link can view". No local sheet_log.csv export needed.
+- **`python main.py` is the single trigger** — no scheduler, no daemon
+- **Recording rule correction**: for stops over 30 min (shooting range, football) — PAUSE OsmAnd, not stop. Gap-based stop detector handles the timestamp gap correctly. Two separate files would not merge cleanly over a 60-min gap.
+- **Leg independence**: outbound and return are fully independent records. Missing one leg does not affect the other. No errors, just thinner data for that direction.
+- **Frontend planned for Phase 4**: simple local web frontend to visualise master_trips.csv, heatmap, and dashboard. Stack TBD — likely plain HTML/JS or minimal React. Lightweight, no build step.
 
 ### Commute structure
 - User parks at a **nearby mall** most days — avoids traffic U-turn, saves ~15 mins
@@ -56,7 +62,8 @@ Designed as a public GitHub project and portfolio piece.
 ### GPX file transfer method
 - Android 13+ blocks access to Android/data/ from Files app
 - Workaround: OsmAnd -> My Places -> Tracks -> long press -> Share -> Google Drive
-- Weekly habit: download from Drive -> paste into data/gpx/
+- Google Drive folder: `G:\My Drive\Miscellaneous\GPX`
+- Weekly habit: copy from `G:\My Drive\Miscellaneous\GPX` -> paste into `data/gpx/`
 
 ---
 
@@ -215,7 +222,7 @@ file, the old CSV row is removed and replaced with the merged result.
 - [x] Anchor coordinates in config.yaml (gitignored)
 - [x] Minimal sidecar sheet built (Commute_Sidecar.xlsx) and uploaded to Google Sheets
 - [x] Petrol price confirmed: Rs 103/l as of 2026-04-13
-- [x] GPX transfer method confirmed: OsmAnd share -> Google Drive -> PC download
+- [x] GPX transfer method confirmed: OsmAnd share -> Google Drive (G:\My Drive\Miscellaneous\GPX) -> manual copy to data/gpx/
 - [x] 4 real commute GPX files in data/gpx/ ready to test parser
 - [x] GitHub repo created: github.com/Jcube101/commute-lens
 - [x] Folder structure created locally
@@ -223,35 +230,43 @@ file, the old CSV row is removed and replaced with the merged result.
 - [x] config.example.yaml committed with full structure and inline comments
 - [x] .gitignore covers config.yaml, data/gpx/, outputs/
 - [x] Initial commit pushed
-- [x] Recording rules defined (30 min threshold, partial trip handling, detour filtering)
+- [x] Recording rules defined (30 min threshold, PAUSE not stop, partial trip handling, detour filtering)
 - [x] Short-stop merge logic defined for petrol bunk splits
 - [x] parser.py — GPX reader, trip classifier, merger, haversine, speed extraction, parking detection, partial flag, mid-trip stop detection, incremental processing
 - [x] Parser tested against 5 real GPX files — classification verified, stop detection confirmed on Apr 14 trip (65.2 min shooting range stop correctly stripped)
-- [x] requirements.txt created with Phase 1 deps
+- [x] requirements.txt updated (pyyaml Phase 1, requests Phase 2)
+- [x] weather.py — Open-Meteo fetch by lat/lon/datetime, cache in outputs/weather_cache.json
+- [x] main.py — full join pipeline: incremental parser + sheet CSV fetch + petrol price lookup + weather enrichment -> master_trips.csv
+- [x] petrol_prices.csv seeded (2026-04-13, Rs 103/l)
+- [x] sheet_csv_url added to config.yaml and config.example.yaml
+- [x] README.md — portfolio-grade, personality-first, shields.io badges
+- [x] learnings.md — key technical decisions with rationale
+- [x] specs.md — full technical specification (schema, config, pipeline, parameters)
+- [x] roadmap.md — phase-structured roadmap
+- [x] CONTRIBUTING.md — fork instructions for other commuters
 
 ### To Do
 
-#### Phase 1 — Foundation
-- [ ] sheet_log.csv — export from Google Sheets, confirm join works on date + direction
-
-#### Phase 2 — Enrichment (after parser verified)
-- [ ] weather.py — Open-Meteo fetch by lat/lon/datetime, cache results locally
-- [ ] cluster.py — path similarity clustering, descriptive label generation
-- [ ] main.py — join pipeline: GPX output + sheet + weather + petrol price -> master_trips.csv
+#### Phase 2 — Enrichment (verify end-to-end)
+- [ ] Run `python main.py` with real sheet data and confirm all enrichment fields populated
+- [ ] Collect ~10 classified commute trips with full data before moving to Phase 3
 
 #### Phase 3 — Output (needs ~10+ real commute trips)
 - [ ] heatmap.html — folium map, speed coloured green->red per segment
 - [ ] dashboard.html — departure bucket analysis, route comparison, weekly trends, fuel cost
+- [ ] analysis.py — generates both HTML outputs from master_trips.csv
+- [ ] cluster.py — path similarity clustering, descriptive route labels (e.g. "Via ORR")
 
 #### Phase 4 — Portfolio (after ~40 trips and meaningful data)
-- [ ] README.md — bold, personality-first, orange accent #e85d04, shields.io badges, heatmap as hero visual
+- [ ] Local web frontend — visualise master_trips.csv, heatmap, dashboard in one place (plain HTML/JS or minimal React)
+- [ ] README.md — add real heatmap screenshot as hero visual
 - [ ] Portfolio page on job-joseph.com (Lovable prompt)
 - [ ] Add to CV alongside other projects
 
 ---
 
 ## Open Items
-- [ ] Confirm Google Drive folder name used for GPX sync (for README documentation)
+- [ ] Run `python main.py` end-to-end and verify master_trips.csv enrichment fields are correct
 
 ---
 
@@ -263,7 +278,9 @@ file, the old CSV row is removed and replaced with the merged result.
 - Open-Meteo: free, no API key, historical hourly weather by lat/lon
 - Folium: Python library for interactive Leaflet maps
 - 5 real GPX files processed: 3 classified (1 valid return, 2 partial), 1 merged+discarded (unrelated), 1 road trip partial (Return from Kolar)
-- master_trips.csv columns: filename, date, direction, departure_time, arrival_time, duration_min, distance_km, avg_speed_kmh, parking, partial, scenario_c, stop_detected, stop_duration_mins, adjusted_duration_mins, point_count
+- Google Drive GPX folder: G:\My Drive\Miscellaneous\GPX
+- master_trips.csv parser fields (15): filename, date, direction, departure_time, arrival_time, duration_min, distance_km, avg_speed_kmh, parking, partial, scenario_c, stop_detected, stop_duration_mins, adjusted_duration_mins, point_count
+- master_trips.csv enrichment fields (12): mileage_kmpl, day_type, notes, petrol_price_rs, fuel_cost_rs, day_of_week, week_num, temp_c, humidity_pct, rain_mm, wind_kmh, weather_code
 
 ---
 

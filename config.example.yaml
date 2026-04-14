@@ -1,3 +1,5 @@
+sheet_csv_url: YOUR_SHEET_CSV_URL   # Google Sheets CSV export link (File > Share > Publish to web)
+
 anchors:
   home:
     lat: YOUR_HOME_LAT

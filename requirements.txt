@@ -1,8 +1,12 @@
 # Phase 1 — parser (GPX ingestion and classification)
 pyyaml>=6.0
 
-# Phase 2 — enrichment (weather, clustering, full pipeline)
-# requests
+# Phase 2 — enrichment (weather, sheet join, petrol price, full pipeline)
+requests>=2.31
+
+# Phase 3 — outputs (heatmap, dashboard)
 # pandas
-# scikit-learn
 # folium
+
+# Phase 4 — clustering (route similarity labels)
+# scikit-learn

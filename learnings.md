@@ -1,0 +1,85 @@
+# commute-lens — Key Technical Decisions
+
+This document records the non-obvious design choices made during this project and the reasoning behind them. Decisions that seemed obvious are not here. Things that required investigation, debugging, or deliberate tradeoffs are.
+
+---
+
+## Gap-based stop detection, not speed-sequence detection
+
+**What I built:** Stop detection checks for large time gaps between consecutive points at nearly the same coordinates, not for runs of low-speed readings.
+
+**Why:** OsmAnd uses displacement-based recording (minimum 10m displacement threshold). When the car is stationary, OsmAnd stops logging entirely — there is no GPS point recorded while parked. This means a 65-minute stop at a shooting range produces exactly zero logged points during the stop. The stop is visible only as a jump in timestamp between the last point before parking and the first point after leaving.
+
+A speed-sequence detector (e.g. "flag if speed < 5 km/h for 20+ consecutive minutes") would find nothing, because there are no points to form the sequence. When I analysed the April 14 GPX file, the shooting range stop had only three points in the relevant speed range, spanning under 30 seconds — not 65 minutes.
+
+**Detection criteria (all four must hold):**
+- Time gap > 20 minutes
+- Spatial displacement < 150 m (car stayed put)
+- Speed at entry point < 15 km/h (car was slowing, not cruising through a coverage dead zone)
+- Midpoint not within any anchor radius (not arriving home or at work)
+
+The entry-speed guard matters: a GPS coverage outage on a highway can also produce a large time gap, but the entry speed will be high. Without this guard, a tunnel or dead zone on the outer ring road would look like a stop.
+
+---
+
+## OsmAnd namespace for speed extraction
+
+**What I built:** Speed is extracted from `<extensions><osmand:speed>` using the full namespace URI `https://osmand.net/docs/technical/osmand-file-formats/osmand-gpx`.
+
+**Why:** OsmAnd logs speed in metres per second under its own XML namespace, not in the standard GPX `<speed>` element. A naive GPX parser looking for `<speed>` in the GPX namespace finds nothing and falls back to deriving speed from distance/time, losing the per-point precision OsmAnd actually records.
+
+The speed value must be multiplied by 3.6 to convert m/s to km/h. Not all points have speed extensions — the namespace element is present only when OsmAnd logs it. The extractor returns `None` for missing points and the speed average skips them.
+
+---
+
+## Incremental processing design
+
+**What I built:** `outputs/processed.json` stores the set of GPX filenames already committed to `master_trips.csv`. Each run parses only new files and appends to the CSV.
+
+**Why:** Without this, every run would re-parse all GPX files and rewrite the CSV from scratch, discarding enrichment fields (weather, sheet data) that `main.py` wrote in a previous run. The parser only knows about its own output columns; it cannot reconstruct enrichment data.
+
+**The re-merge edge case:** If a new GPX file arrives adjacent (< 30 min gap) to an already-processed file, the two form a merged group that supersedes the old single-file CSV row. `write_csv_incremental()` handles this by checking for filename overlap and removing stale rows before appending the new merged row.
+
+**The extrasaction guard:** The parser's `DictWriter` uses `extrasaction="ignore"` so that when `main.py` has already written enrichment fields to `master_trips.csv`, the parser's incremental write does not raise a ValueError on the extra columns it does not own.
+
+---
+
+## Why Google Timeline was abandoned
+
+Google Timeline used to export a complete location history as a JSON file. The new on-device format (post-2023) stores data on the device itself and has no bulk export path. The data is also increasingly sparse due to battery optimisation — it does not record continuous track points the way OsmAnd does.
+
+OsmAnd was chosen because it records at a configurable interval (3s during navigation, 5s otherwise), uses displacement-based triggers to avoid logging while truly stationary, and exports clean GPX files that can be shared via Google Drive.
+
+---
+
+## Why a minimal manual sheet instead of fully automated logging
+
+The only fields that genuinely cannot be extracted from GPS data are:
+
+- **Mileage (km/l)** — must be read from the car's trip computer. No OBD-II access without additional hardware. The ARAI baseline of 19.2 km/l is not useful for per-trip cost analysis.
+- **Day type** — Normal / Post-Holiday / Pre-Holiday / WFH. Context that affects departure time patterns (post-holiday Mondays are reliably worse) but cannot be inferred from GPS.
+- **Notes** — Detours, missing GPX reason, unusual events.
+
+Everything else is derived automatically. The sheet is five columns wide and two rows per commute day. It is published as a CSV endpoint and fetched live on every pipeline run — no manual export step.
+
+---
+
+## Anchor tie-breaking
+
+OFFICE and MALL are geographically close (approximately 250 metres apart). When a trip starts within the radius of both anchors simultaneously, the parser picks the closer anchor rather than the first match. Without this, trips starting near the mall would always be classified as starting at OFFICE because OFFICE was checked first, producing wrong parking labels.
+
+---
+
+## GPX sync is a manual copy step by design
+
+Android 13+ restricts access to `Android/data/` from the Files app, where OsmAnd stores track files. The workaround is to share through OsmAnd itself: My Places → Tracks → long press → Share → Google Drive.
+
+Files are manually copied from Google Drive to `data/gpx/` before running the pipeline. Automating the Drive download would add OAuth credential management for a step that takes under a minute and happens at most weekly. Not worth it.
+
+---
+
+## Recording rule: PAUSE, not stop
+
+For stops longer than 30 minutes (shooting range, football), the correct OsmAnd action is to **pause** recording, not stop it. A paused recording resumes the same file when you restart; stopping and restarting creates two separate files.
+
+With a paused recording, the gap between the last pre-stop point and the first post-stop point is exactly the stop duration. The gap-based detector handles this correctly. If two separate files were created instead, they would be merged by `merge_consecutive_groups()` only if the gap is under 30 minutes — which it is not for a 60-minute stop. So the two files would be classified separately, potentially misclassified.
