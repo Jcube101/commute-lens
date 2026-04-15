@@ -78,6 +78,26 @@ Files are manually copied from Google Drive to `data/gpx/` before running the pi
 
 ---
 
+## Google Sheets CSV export quirks
+
+**What broke:** The sheet join silently produced no matches on the first end-to-end run. All enrichment fields were blank even though 6 sheet rows were fetched.
+
+**Root cause 1 — title row above headers:** Google Sheets CSV export includes every row starting from row 1. The sheet had a merged title row ("Commute Sidecar Log") in row 1, followed by the real column headers (Date, Direction, Mileage…) in row 2. `csv.DictReader` used the title row as the header, so all column names were wrong.
+
+**Fix:** `load_sheet_csv()` now scans lines until it finds one containing both "Date" and "Direction", then treats that line as the header. This is robust to sheets with any number of title/description rows above the real headers.
+
+**Root cause 2 — column name whitespace:** The sheet column header was `Mileage(km/l)` (no space before the parenthesis). The code looked for `Mileage (km/l)` (with a space). One character difference, silent miss.
+
+**Fix:** `enrich_row()` now tries both variants with `get("Mileage (km/l)") or get("Mileage(km/l)")`.
+
+**Root cause 3 — date format:** Google Sheets renders dates as `14-Apr-26` in its CSV export when the cell format is set to "Date". The original parser only handled `DD/MM/YYYY` and `YYYY-MM-DD`.
+
+**Fix:** `build_sheet_index()` now tries four formats in order: `%d/%m/%Y`, `%Y-%m-%d`, `%d-%b-%y`, `%d-%b-%Y`. Unrecognised formats print a warning and skip the row rather than silently dropping it.
+
+**Lesson:** Sheet CSV joins fail silently by default. Always add a diagnostic that shows how many rows matched vs how many were in the sheet, and print unrecognised date formats explicitly so the failure is visible.
+
+---
+
 ## Recording rule: PAUSE, not stop
 
 For stops longer than 30 minutes (shooting range, football), the correct OsmAnd action is to **pause** recording, not stop it. A paused recording resumes the same file when you restart; stopping and restarting creates two separate files.

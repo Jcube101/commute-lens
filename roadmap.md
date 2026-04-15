@@ -27,7 +27,7 @@
 - [x] `main.py` — single entry point: runs parser incrementally, fetches sheet CSV live, looks up petrol price, enriches all rows with weather and derived fields, writes master_trips.csv
 - [x] `petrol_prices.csv` seeded
 - [x] `sheet_csv_url` added to `config.yaml` — sheet fetched fresh on every run
-- [ ] Verify end-to-end: run `python main.py` with real sheet data and confirm all fields populated
+- [x] Verify end-to-end: run `python main.py` with real sheet data and confirm all fields populated
 - [ ] Collect ~10 classified commute trips with full data before moving to Phase 3
 
 ---
