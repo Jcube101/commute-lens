@@ -248,7 +248,7 @@ file, the old CSV row is removed and replaced with the merged result.
 ### To Do
 
 #### Phase 2 — Enrichment (verify end-to-end)
-- [ ] Run `python main.py` with real sheet data and confirm all enrichment fields populated
+- [x] Run `python main.py` with real sheet data and confirm all enrichment fields populated
 - [ ] Collect ~10 classified commute trips with full data before moving to Phase 3
 
 #### Phase 3 — Output (needs ~10+ real commute trips)
@@ -266,7 +266,7 @@ file, the old CSV row is removed and replaced with the merged result.
 ---
 
 ## Open Items
-- [ ] Run `python main.py` end-to-end and verify master_trips.csv enrichment fields are correct
+- [ ] Collect ~10 classified commute trips before moving to Phase 3
 
 ---
 

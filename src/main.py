@@ -71,6 +71,10 @@ def load_sheet_csv(url: str) -> List[Dict]:
     Fetch the sidecar Google Sheet CSV (Anyone with link can view).
 
     Expected columns: Date, Direction, Mileage (km/l), Day Type, Notes
+
+    Handles sheets that have a title row above the actual headers: scans
+    lines until it finds one containing "Date" and "Direction", then treats
+    that line as the header row.
     """
     try:
         resp = requests.get(url, timeout=15)
@@ -79,7 +83,20 @@ def load_sheet_csv(url: str) -> List[Dict]:
         print(f"  [sheet] WARNING: could not fetch sheet CSV: {exc}")
         return []
 
-    reader = csv.DictReader(resp.text.splitlines())
+    lines = resp.text.splitlines()
+
+    # Find the real header row (contains both "Date" and "Direction")
+    header_idx = None
+    for i, line in enumerate(lines):
+        if "Date" in line and "Direction" in line:
+            header_idx = i
+            break
+
+    if header_idx is None:
+        print("  [sheet] WARNING: could not find header row (need 'Date' and 'Direction' columns).")
+        return []
+
+    reader = csv.DictReader(lines[header_idx:])
     return list(reader)
 
 
@@ -87,7 +104,7 @@ def build_sheet_index(rows: List[Dict]) -> Dict:
     """
     Build a lookup dict keyed by (date_iso, direction).
 
-    Normalises dates that may come through as DD/MM/YYYY or YYYY-MM-DD.
+    Handles date formats: YYYY-MM-DD, DD/MM/YYYY, DD-Mon-YY (e.g. 14-Apr-26).
     """
     index: Dict = {}
     for row in rows:
@@ -95,12 +112,15 @@ def build_sheet_index(rows: List[Dict]) -> Dict:
         direction = row.get("Direction", "").strip()
         if not date_raw or not direction:
             continue
-        try:
-            if "/" in date_raw:
-                d = datetime.strptime(date_raw, "%d/%m/%Y").date().isoformat()
-            else:
-                d = date.fromisoformat(date_raw).isoformat()
-        except ValueError:
+        d = None
+        for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%b-%y", "%d-%b-%Y"):
+            try:
+                d = datetime.strptime(date_raw, fmt).date().isoformat()
+                break
+            except ValueError:
+                continue
+        if d is None:
+            print(f"  [sheet] WARNING: unrecognised date format '{date_raw}' — skipping row.")
             continue
         index[(d, direction)] = row
     return index
@@ -178,7 +198,8 @@ def enrich_row(
     # --- Sheet join ---
     if not row.get("mileage_kmpl"):
         sheet_row = sheet_index.get((trip_date, direction), {})
-        row["mileage_kmpl"] = sheet_row.get("Mileage (km/l)", "").strip()
+        row["mileage_kmpl"] = (sheet_row.get("Mileage (km/l)")
+                               or sheet_row.get("Mileage(km/l)", "")).strip()
         row["day_type"] = sheet_row.get("Day Type", "").strip()
         row["notes"] = sheet_row.get("Notes", "").strip()
 
