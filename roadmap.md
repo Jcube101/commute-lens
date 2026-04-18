@@ -56,6 +56,32 @@
 
 ---
 
+## Phase 5 — Commute Depth (same project, post-40 trips)
+
+**Goal:** Squeeze more insight out of accumulated commute data.
+
+- [ ] **Junction bottleneck ranking** — rank every junction on the route by average time cost across all trips. Needs speed + location only. Output: ranked list of "this signal costs you X minutes per commute on average"
+- [ ] **Day-of-week consistency scoring** — not just average duration per day but variance. Which days are predictable vs wildly variable. More useful for planning than averages alone
+- [ ] **Seasonal traffic patterns** — 6–12 months of data reveals whether certain months are structurally worse. School terms, monsoon, festival seasons all show up in the data
+- [ ] **Fuel efficiency vs road type** — correlate mileage (from sheet) with elevation profile and stop-start density from GPX. Understand whether a longer, smoother route actually saves fuel
+
+---
+
+## Phase 6 — Standalone Projects (new repos, built on same pipeline)
+
+**Goal:** Extend the recording habit into broader personal and community tools.
+
+- [ ] **Predictive departure model** — train a simple model (decision tree) on historical trips: date, day of week, time, weather, duration. Output: "given it is a Tuesday in October and raining, leave by 8:10 for 80% chance of arriving under 35 minutes." Needs ~200 commute trips for reasonable accuracy
+- [ ] **Commute cost of living calculator** — annual summary of hours and rupees spent commuting. "Your commute cost you 312 hours and Rs 47,000 last year." Useful for WFH negotiation, relocation decisions, car upgrade decisions. Needs commute GPX + sheet data only
+- [ ] **Personal movement archive** — the same pipeline processes any trip recorded in OsmAnd, not just commutes. Over years this becomes a personal geography dataset — every road driven, every city visited, total distance covered. Storage is trivial (~50 MB per year of GPX). No sheet entry needed for non-commute trips, just keep OsmAnd running
+- [ ] **City-level traffic intelligence** — if multiple contributors share anonymised GPX exports from the same city, the speed-per-segment data aggregates into crowd-sourced road speed intelligence. Same infrastructure as commute-lens, just aggregated. Privacy-respecting alternative to Waze built on OsmAnd. Long-term stretch goal
+
+### Recording habit note
+
+The 40-trip threshold applies to commute optimisation specifically. The GPX recording habit is worth maintaining indefinitely regardless. For non-commute trips — road trips, weekend drives, intercity travel — just keep OsmAnd running. No sheet entry needed. The parser classifies non-commute GPX as `unrelated` and sets it aside cleanly, but the data is retained for future use.
+
+---
+
 ## Deferred / won't do (for now)
 
 - **OBD-II integration** — Hyundai Exter AMT does not expose standard OBD-II easily. Manual mileage from trip computer is sufficient.
