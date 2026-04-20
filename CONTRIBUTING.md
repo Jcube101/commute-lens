@@ -166,6 +166,26 @@ Check the console output to verify trip classifications look correct. If trips a
 
 ---
 
+## Demo mode — explore without personal data
+
+If you want to see the pipeline output without setting up your own commute data, use the synthetic demo mode:
+
+```bash
+python src/generate_demo.py
+```
+
+This generates synthetic GPX files for 4 fictional Bengaluru commuter profiles using OSRM road geometry:
+- Whitefield → JP Nagar
+- Marathahalli → HSR Layout
+- Hebbal → Koramangala
+- Electronic City → Indiranagar
+
+Output is written to `data/demo/` (committed to GitHub). You can also browse this folder directly to see what the pipeline produces — it contains pre-computed `master_trips.csv`, heatmap, and dashboard outputs for the synthetic profiles.
+
+The synthetic data includes realistic speed profiles with time-of-day variation, weather impact, and known Bengaluru bottlenecks (Silk Board, Iblur, Marathahalli bridge, Hebbal flyover).
+
+---
+
 ## Troubleshooting
 
 **Trips classified as unrelated:** Check that your anchor coordinates actually match where you start and end. Increase `radius_m` if GPS drift at the anchor location is large.

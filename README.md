@@ -127,18 +127,43 @@ python main.py
 
 ---
 
+## Demo — synthetic commuter profiles
+
+Don't have your own commute data yet? The repo includes a synthetic demo mode with 4 fictional Bengaluru commuter profiles built on real road geometry (via OSRM):
+
+| Corridor | Known bottlenecks |
+|---|---|
+| Whitefield → JP Nagar | Marathahalli bridge, Silk Board |
+| Marathahalli → HSR Layout | Iblur junction, Silk Board |
+| Hebbal → Koramangala | Hebbal flyover, Dairy Circle |
+| Electronic City → Indiranagar | Silk Board, Koramangala |
+
+```bash
+python src/generate_demo.py
+```
+
+This generates synthetic GPX files with realistic speed profiles — time-of-day variation, weather impact, and bottleneck slowdowns. Output lands in `data/demo/` (already committed, so you can browse without running anything).
+
+The interactive explorer lets you select a profile, toggle departure window and weather, and see how the bottleneck heatmap and reliability scores change. This is distributional intelligence over time — what Google Maps cannot tell you.
+
+> The project gets more useful the longer it runs. Real data improves the analysis over time — 10 trips give you a heatmap, 40 give you patterns, 200 give you predictions. Rare for a portfolio project.
+
+---
+
 ## Data privacy
 
-`config.yaml`, `data/gpx/`, and `outputs/` are all gitignored. Your coordinates, routes, and sheet URL never leave your machine.
+`config.yaml`, `data/gpx/`, and `outputs/` are all gitignored. Your coordinates, routes, and sheet URL never leave your machine. The portfolio demo uses only synthetic data on public road geometry — no personal locations are ever published.
 
 ---
 
 ## Roadmap
 
 - **Phase 1** (complete): GPX parser, incremental processing, stop detection
-- **Phase 2** (in progress): Weather enrichment, sheet join, petrol price, full pipeline
+- **Phase 2** (complete): Weather enrichment, sheet join, petrol price, full pipeline
 - **Phase 3**: Speed heatmap, departure time dashboard, fuel cost trends
-- **Phase 4**: Local web frontend, portfolio write-up
+- **Phase 4**: Synthetic demo mode (OSRM + MapLibre GL JS), interactive portfolio frontend
+- **Phase 5**: Junction bottleneck ranking, day-of-week variance, seasonal patterns
+- **Phase 6**: Predictive departure model, commute cost calculator, city-level traffic intelligence
 
 See [roadmap.md](roadmap.md) for detail.
 

@@ -32,12 +32,10 @@ Designed as a public GitHub project and portfolio piece.
 - **Route labels** will be descriptive (e.g. "Via ORR") not arbitrary letters
 - **config.yaml in .gitignore** — all personal coordinates and location data lives here only
 - **data/gpx/ and outputs/ in .gitignore** — personal data stays local
-- **GPX sync is manual**: user copies files from `G:\My Drive\Miscellaneous\GPX` to `data/gpx/` before running the pipeline. main.py does NOT read from G: drive.
-- **Sheet CSV fetched live**: `sheet_csv_url` in config.yaml points to the Google Sheets CSV export. Fetched fresh on every run via requests.get(). Sheet is set to "Anyone with link can view". No local sheet_log.csv export needed.
-- **`python main.py` is the single trigger** — no scheduler, no daemon
-- **Recording rule correction**: for stops over 30 min (shooting range, football) — PAUSE OsmAnd, not stop. Gap-based stop detector handles the timestamp gap correctly. Two separate files would not merge cleanly over a 60-min gap.
-- **Leg independence**: outbound and return are fully independent records. Missing one leg does not affect the other. No errors, just thinner data for that direction.
-- **Frontend planned for Phase 4**: simple local web frontend to visualise master_trips.csv, heatmap, and dashboard. Stack TBD — likely plain HTML/JS or minimal React. Lightweight, no build step.
+- **No Windows Task Scheduler** — pipeline runs manually via python main.py as a deliberate "Go" trigger
+- **Google Sheet fetched as CSV** — sheet published as "Anyone with link can view", URL in config.yaml, fetched fresh on every run
+- **GPX sync is manual** — user copies from G:\My Drive\Miscellaneous\GPX to data/gpx/ before running pipeline
+- **Sheet is read-only** — pipeline never writes to it. View-only link is correct and intentional
 
 ### Commute structure
 - User parks at a **nearby mall** most days — avoids traffic U-turn, saves ~15 mins
@@ -48,9 +46,10 @@ Designed as a public GitHub project and portfolio piece.
 
 ### GPX recording rules (user habit)
 - **Under 30 min stops** (petrol bunk, chai, short wait): keep recording straight through
-- **Over 30 min stops** (shooting range, football): stop recording, restart when leaving
+- **Over 30 min stops** (shooting range ~2hrs twice/week, football ~1hr once/month): PAUSE OsmAnd (not stop), resume when leaving. Creates a timestamp gap in one file — gap-based stop detector handles it correctly
+- **Do not stop and restart for detours** — pause/resume keeps it as one file
 - **Forgot to start at home**: still record — parser flags partial=True, useful for heatmap
-- **Detour trips**: parser filters automatically as they don't match anchor pairs. Note in sheet if no return GPX that day
+- **Kept recording through a long stop by mistake**: parser detects via gap analysis and subtracts stop duration. Both raw and adjusted duration recorded
 
 ### GPX data confirmed working
 - Tested with a road trip GPX file (~65 km, ~115 mins)
@@ -58,38 +57,40 @@ Designed as a public GitHub project and portfolio piece.
 - Speed stored under OsmAnd namespace: https://osmand.net/docs/technical/osmand-file-formats/osmand-gpx
 - Point interval: ~5-6 seconds — sufficient for junction-level bottleneck detection
 - Parser must handle OsmAnd namespace explicitly when extracting speed
+- Gap-based stop detection is correct approach — OsmAnd stops logging when parked so there is no speed=0 run to detect, only a clean timestamp gap
 
-### GPX file transfer method
+### GPX file transfer method (manual, weekly)
 - Android 13+ blocks access to Android/data/ from Files app
 - Workaround: OsmAnd -> My Places -> Tracks -> long press -> Share -> Google Drive
-- Google Drive folder: `G:\My Drive\Miscellaneous\GPX`
-- Weekly habit: copy from `G:\My Drive\Miscellaneous\GPX` -> paste into `data/gpx/`
+- Google Drive mounted locally as G: drive
+- Source path: G:\My Drive\Miscellaneous\GPX
+- Destination: C:\Users\jobjo\Github\commute-lens\data\gpx\
+- Future option: FolderSync app on Android for automatic phone->Drive sync (not set up yet)
+
+### Portfolio strategy — privacy-first
+- Real dashboard and analysis runs entirely locally — never hosted publicly
+- Portfolio page uses synthetic commuter profiles built on OSRM road geometry
+- Synthetic commuters: Whitefield->JP Nagar, Marathahalli->HSR Layout, Hebbal->Koramangala, Electronic City->Indiranagar
+- No personal coordinates, location names, or real trip data ever appears on the website
+- Demo mode clearly labelled as illustrative on the portfolio page
+- Distinction from Google Maps: pattern intelligence over time (distributional insights, variance, reliability scores) — not real-time routing
+
+### Portfolio narrative arc
+- Launch (Phase 4): synthetic demo, pipeline open-sourced, clearly labelled illustrative
+- 3 months: 60+ real trips, anonymised aggregate insights published ("across 60 commutes on this corridor...")
+- 6 months: departure time prediction model trained on real data — novel output beyond what Maps provides
+- The project gets more useful the longer it runs — rare for a portfolio project, worth saying in README
 
 ---
 
 ## Where personal data lives
-All of the following are in config.yaml which is gitignored and never leaves your machine:
+All of the following are in config.yaml — gitignored, never leaves local machine:
 - HOME coordinates
 - OFFICE coordinates
 - MALL name and coordinates
+- Google Sheet CSV URL (sheet_csv_url)
 
-config.example.yaml (committed to GitHub) contains only placeholder values:
-```yaml
-anchors:
-  home:
-    lat: YOUR_HOME_LAT
-    lon: YOUR_HOME_LON
-    radius_m: 300
-  office:
-    lat: YOUR_OFFICE_LAT
-    lon: YOUR_OFFICE_LON
-    radius_m: 300
-  mall:
-    name: YOUR_MALL_NAME
-    lat: YOUR_MALL_LAT
-    lon: YOUR_MALL_LON
-    radius_m: 300
-```
+config.example.yaml (committed to GitHub) contains only placeholder values.
 
 ---
 
@@ -100,214 +101,184 @@ commute-lens/
   data/
     gpx/                     <- weekly OsmAnd GPX drops (gitignored)
     reference/
-      Commute_Sidecar.xlsx   <- minimal manual log (upload to Google Sheets)
-      petrol_prices.csv      <- date-range fuel price reference
-      sheet_log.csv          <- CSV export from Google Sheets for parser
+      Commute_Sidecar.xlsx   <- minimal manual log (uploaded to Google Sheets)
+      petrol_prices.csv      <- date-range fuel price reference (seeded: Rs 103/l from 2026-04-13)
   outputs/                   <- all generated files (gitignored)
     master_trips.csv         <- one row per trip, all fields merged
+    processed.json           <- tracks which GPX files have been processed (incremental)
+    weather_cache.json       <- cached Open-Meteo responses to avoid re-fetching
     heatmap.html             <- speed-coloured map of road segments
     dashboard.html           <- summary charts and trends
   src/
-    parser.py                <- GPX ingestion, trip filter, haversine, parking detection
-    weather.py               <- Open-Meteo API fetch by lat/lon/datetime
+    parser.py                <- GPX ingestion, trip classifier, merger, stop detection, haversine
+    weather.py               <- Open-Meteo fetch by lat/lon/datetime with local cache
     cluster.py               <- route clustering by path similarity, descriptive labels
     analysis.py              <- heatmap and dashboard generation
-    main.py                  <- entry point, runs full pipeline
-  config.example.yaml        <- placeholder template (committed to GitHub)
-  config.yaml                <- real coordinates and settings (gitignored, never committed)
+    generate_demo.py         <- generates synthetic GPX files for portfolio demo mode
+    main.py                  <- "Go" button. Run: python main.py
+  data/demo/                 <- synthetic commuter data for portfolio (committed to GitHub)
+  config.example.yaml        <- placeholder template (committed)
+  config.yaml                <- real coordinates and settings (gitignored)
   requirements.txt
   CLAUDE.md                  <- this file
-  README.md                  <- portfolio-grade, personality-first
+  README.md
+  learnings.md
+  specs.md
+  roadmap.md
+  CONTRIBUTING.md
 ```
 
 ---
 
 ## Minimal Sidecar Sheet
 
-5 columns, two rows per day (one per leg), direction explicit to catch missing entries:
+5 columns, two rows per day (one per leg):
 
 | Field | Source | Notes |
 |---|---|---|
 | Date | Manual | Join key for parser |
 | Direction | Manual dropdown | Home to Office / Office to Home |
 | Mileage (km/l) | Manual | From car trip computer after trip |
-| Day Type | Manual dropdown | Normal / Post-Holiday / Pre-Holiday / WFH / Other |
-| Notes | Manual optional | Detours, anomalies, missing GPX reason |
+| Day Type | Manual dropdown | Normal / Post-Holiday / Pre-Holiday / WFH / Detour / Other |
+| Notes | Manual optional | Anomalies, missing GPX reason |
 
-Petrol Prices tab — update only when pump price changes:
+Petrol Prices tab: update only when pump price changes. Parser looks up by date range.
 
-| From Date | To Date | Petrol Price (Rs/l) |
-|---|---|---|
-| 2026-04-13 | - | 103.0 |
+Sheet CSV URL: stored in config.yaml only. Fetched fresh on every pipeline run via requests.get().
+Outbound and return legs are fully independent — missing one does not affect analysis of the other.
 
-Everything else auto-derived by parser:
-- Departure/arrival time, duration, distance, avg speed -> GPX timestamps + haversine
-- Parking (Office / Mall / Sent to Mall) -> GPX endpoint vs anchor coordinates in config.yaml
-- Scenario C -> office coordinates appear mid-route before mall endpoint
-- Partial trip -> end matches anchor but start does not — flagged partial=True, not discarded
-- Weather -> Open-Meteo API by date/time/location
-- Route cluster label -> path similarity clustering
-- Fuel cost -> distance / mileage x petrol price lookup by date
-- Week number, day of week, trip number -> computed
+---
+
+## Scenario Handling Reference
+
+| Scenario | OsmAnd action | Sheet entry | Parser behaviour |
+|---|---|---|---|
+| Normal commute | Keep recording | 2 rows | Full trip extracted |
+| Petrol bunk stop (<10 min) | Keep recording | Normal | Auto-split files merged |
+| Forgot to start at home | Record from wherever | Normal | Flagged partial=True |
+| Sent to mall mid-trip (Scenario C) | Keep recording | 1 row Home->Office | Auto-detected from GPX |
+| Shooting range / football (>30 min) | PAUSE, resume after | Normal | Stop detected, duration adjusted |
+| Forgot to pause (kept recording) | — | Normal | Gap analysis detects stop, adjusts |
+| Only one leg recorded | Record that leg | 1 row | That leg processed independently |
+| WFH day | No recording | No entry | Nothing to process |
 
 ---
 
 ## Parser Logic (parser.py)
 
 ### Trip classification
-- Valid outbound  : start ~= HOME  and end ~= OFFICE or MALL
-- Valid return    : start ~= OFFICE or MALL  and end ~= HOME
+- Valid outbound  : start ~= HOME and end ~= OFFICE or MALL
+- Valid return    : start ~= OFFICE or MALL and end ~= HOME
 - Scenario C      : start ~= HOME, OFFICE coords mid-route, end ~= MALL
-- Partial trip    : end matches anchor, start does not -> partial=True, keep for heatmap
-- Unrelated trip  : no anchor match -> discard silently
+- Partial trip    : end matches anchor, start does not -> partial=True, kept for heatmap
+- Unrelated trip  : no anchor match -> discarded silently
 
 ### Short-stop merge logic
-If two consecutive GPX files are <30 mins apart and together form a valid anchor pair,
-merge them into one trip. Handles petrol bunk auto-splits cleanly.
-
-### Speed extraction
-OsmAnd speed is in m/s under the osmand.net namespace. Multiply by 3.6 for km/h.
+Two consecutive GPX files <30 mins apart that together form valid anchor pair -> merged.
+Re-merge: if new file is adjacent to already-processed file, old CSV row replaced with merged result.
 
 ### Mid-trip stop detection
-OsmAnd uses displacement-based recording (10m threshold). When the car is stationary,
-the GPS stops logging entirely — so a stop appears as a **time gap** between two
-consecutive points at nearly the same coordinates, not as a sequence of slow-speed points.
-
-A gap is flagged as a mid-trip stop when ALL of:
-- Time gap > `stop_min_minutes` (default 20 min, configurable in config.yaml)
-- Spatial displacement < 150 m (car stayed put)
-- Speed at the point before the gap < 15 km/h (car was slowing, not cruising)
-- Midpoint not within any anchor radius (not arriving at HOME/OFFICE/MALL)
-
-Fields added to CSV:
-- `stop_detected` — True/False
-- `stop_duration_mins` — total time in detected stops (summed if multiple)
-- `adjusted_duration_mins` — duration_min minus stop_duration_mins
-
-### Anchor tie-breaking
-When a trip start point falls within the radius of both OFFICE and MALL
-(they are close together), the closer anchor wins for the parking field.
+Speed < 5 km/h or timestamp gap > 20 min at non-anchor coordinates:
+- stop_detected = True, stop_duration_mins, adjusted_duration_mins recorded
+- Gap-based detection is correct — OsmAnd stops logging when parked (no speed=0 run)
 
 ### Incremental processing
-Processed GPX filenames are tracked in `outputs/processed.json`. Each run
-only parses new files and appends to master_trips.csv rather than rewriting it.
-Re-merge edge case: if a new file is adjacent (<30 min gap) to an already-processed
-file, the old CSV row is removed and replaced with the merged result.
+outputs/processed.json tracks processed filenames. Each run only processes new files.
 
 ---
 
-## Full Pipeline (main.py)
+## Full Pipeline — python main.py
 
-1. Read all GPX files from data/gpx/
-2. Classify each as valid commute / partial / unrelated
-3. Merge consecutive files separated by <30 min gaps if they form valid anchor pair
-4. Extract per-trip: departure, arrival, duration, distance, speed profile, parking, Scenario C flag
-5. Fetch weather from Open-Meteo for each trip date/time
-6. Join with sheet_log.csv on date + direction
-7. Look up petrol price from petrol_prices.csv by date range
-8. Calculate fuel cost (distance / mileage x price)
-9. Cluster trips by path similarity -> assign descriptive route labels
-10. Output master_trips.csv
-11. Generate heatmap.html — speed coloured green->red per segment
-12. Generate dashboard.html — departure bucket analysis, route comparison, weekly trends
+1. Check for new GPX files not in processed.json
+2. Parse new files: classify, merge, extract, detect stops
+3. Fetch weather from Open-Meteo (use cache if already fetched for that date/location)
+4. Fetch sidecar sheet CSV fresh from sheet_csv_url in config.yaml
+5. Join on date + direction
+6. Look up petrol price by date range from petrol_prices.csv
+7. Calculate fuel cost
+8. Cluster all trips by path similarity -> descriptive route labels
+9. Append to master_trips.csv
+10. Regenerate heatmap.html and dashboard.html
 
 ---
 
 ## Build Order
 
 ### Done
-- [x] OsmAnd auto-record configured (7 km/h trigger, 10m displacement, 10min gap split, 3s/5s interval)
+- [x] OsmAnd auto-record configured
 - [x] GPX data quality confirmed with test file
-- [x] OsmAnd speed namespace confirmed for parser
+- [x] OsmAnd speed namespace confirmed
 - [x] Anchor coordinates in config.yaml (gitignored)
-- [x] Minimal sidecar sheet built (Commute_Sidecar.xlsx) and uploaded to Google Sheets
-- [x] Petrol price confirmed: Rs 103/l as of 2026-04-13
-- [x] GPX transfer method confirmed: OsmAnd share -> Google Drive (G:\My Drive\Miscellaneous\GPX) -> manual copy to data/gpx/
-- [x] 4 real commute GPX files in data/gpx/ ready to test parser
-- [x] GitHub repo created: github.com/Jcube101/commute-lens
-- [x] Folder structure created locally
-- [x] config.yaml written locally (gitignored)
-- [x] config.example.yaml committed with full structure and inline comments
-- [x] .gitignore covers config.yaml, data/gpx/, outputs/
-- [x] Initial commit pushed
-- [x] Recording rules defined (30 min threshold, PAUSE not stop, partial trip handling, detour filtering)
-- [x] Short-stop merge logic defined for petrol bunk splits
-- [x] parser.py — GPX reader, trip classifier, merger, haversine, speed extraction, parking detection, partial flag, mid-trip stop detection, incremental processing
-- [x] Parser tested against 5 real GPX files — classification verified, stop detection confirmed on Apr 14 trip (65.2 min shooting range stop correctly stripped)
-- [x] requirements.txt updated (pyyaml Phase 1, requests Phase 2)
-- [x] weather.py — Open-Meteo fetch by lat/lon/datetime, cache in outputs/weather_cache.json
-- [x] main.py — full join pipeline: incremental parser + sheet CSV fetch + petrol price lookup + weather enrichment -> master_trips.csv
-- [x] petrol_prices.csv seeded (2026-04-13, Rs 103/l)
-- [x] sheet_csv_url added to config.yaml and config.example.yaml
-- [x] README.md — portfolio-grade, personality-first, shields.io badges
-- [x] learnings.md — key technical decisions with rationale
-- [x] specs.md — full technical specification (schema, config, pipeline, parameters)
-- [x] roadmap.md — phase-structured roadmap
-- [x] CONTRIBUTING.md — fork instructions for other commuters
+- [x] Minimal sidecar sheet built and uploaded to Google Sheets
+- [x] Petrol price seeded: Rs 103/l from 2026-04-13
+- [x] GPX transfer method confirmed (manual weekly)
+- [x] parser.py — classifier, merger, haversine, speed extraction, parking, partial flag
+- [x] Mid-trip stop detection (gap-based)
+- [x] Incremental processing with processed.json
+- [x] weather.py with local cache
+- [x] Google Sheet CSV fetch in main.py
+- [x] Petrol price lookup from petrol_prices.csv
+- [x] Join pipeline verified end-to-end
+- [x] requirements.txt created
+- [x] All markdown files created: README, CLAUDE, learnings, specs, roadmap, CONTRIBUTING
+- [x] All changes committed and pushed to GitHub
 
 ### To Do
 
-#### Phase 2 — Enrichment (verify end-to-end)
-- [x] Run `python main.py` with real sheet data and confirm all enrichment fields populated
-- [ ] Collect ~10 classified commute trips with full data before moving to Phase 3
-
 #### Phase 3 — Output (needs ~10+ real commute trips)
-- [ ] heatmap.html — folium map, speed coloured green->red per segment
+- [ ] cluster.py — path similarity clustering, descriptive label generation
+- [ ] heatmap.html — folium map, speed coloured green->red per segment, anonymised (no home/office markers)
 - [ ] dashboard.html — departure bucket analysis, route comparison, weekly trends, fuel cost
-- [ ] analysis.py — generates both HTML outputs from master_trips.csv
-- [ ] cluster.py — path similarity clustering, descriptive route labels (e.g. "Via ORR")
 
-#### Phase 4 — Portfolio (after ~40 trips and meaningful data)
-- [ ] Local web frontend — visualise master_trips.csv, heatmap, dashboard in one place (plain HTML/JS or minimal React)
-- [ ] README.md — add real heatmap screenshot as hero visual
+#### Phase 4 — Demo mode and portfolio (after ~40 real trips)
+- [ ] generate_demo.py — synthetic GPX generator using OSRM road geometry for 4 fictional Bengaluru commuters:
+  - Whitefield -> JP Nagar
+  - Marathahalli -> HSR Layout
+  - Hebbal -> Koramangala
+  - Electronic City -> Indiranagar
+- [ ] Realistic speed profiles per segment: time-of-day and weather as inputs, known Bengaluru bottlenecks baked in (Silk Board, Iblur, Marathahalli bridge, Hebbal flyover)
+- [ ] data/demo/ folder with pre-computed synthetic outputs (committed to GitHub)
+- [ ] Portfolio frontend — MapLibre GL JS + OpenFreeMap tiles, interactive commuter profile explorer:
+  - Select commuter profile
+  - Toggle departure time window (before 8am / 8-9am / after 9am)
+  - Toggle weather (clear / rain)
+  - See bottleneck heatmap update
+  - See reliability score (variance, not just average) per route
+  - Key insight: distributional patterns over time, not real-time routing
+- [ ] README.md — bold, personality-first, #e85d04 orange, shields.io badges, heatmap as hero visual
 - [ ] Portfolio page on job-joseph.com (Lovable prompt)
-- [ ] Add to CV alongside other projects
+- [ ] Add to CV
+
+#### Phase 5 — Commute depth (post-40 trips, same repo)
+- [ ] Junction bottleneck ranking — rank every junction by average time cost across all trips
+- [ ] Day-of-week consistency scoring — variance per day, not just average duration
+- [ ] Seasonal traffic patterns — 6-12 months reveals structural differences by month
+- [ ] Fuel efficiency vs road type — correlate mileage with elevation and stop-start density
+
+#### Phase 6 — Standalone projects (new repos)
+- [ ] Predictive departure model — decision tree on 200+ trips: date, day, time, weather -> duration prediction with confidence interval
+- [ ] Commute cost of living calculator — annual hours and rupees summary
+- [ ] Personal movement archive — all OsmAnd recordings (not just commutes) as a personal geography dataset
+- [ ] City-level traffic intelligence — aggregate anonymised GPX from multiple contributors, crowd-sourced road speed data for Bengaluru
 
 ---
 
 ## Open Items
-- [ ] Collect ~10 classified commute trips before moving to Phase 3
+- [ ] Confirm Google Drive GPX folder path is G:\My Drive\Miscellaneous\GPX (add to config.example.yaml)
 
 ---
+
+## Data Sources
+- OsmAnd GPX: personal GPS recordings
+- Open-Meteo: free, no API key, historical + forecast weather by lat/lon
+- OSRM (router.project-osrm.org): free routing API on OpenStreetMap for demo road geometry
+- OpenFreeMap tiles: free map tiles for portfolio frontend
+- Google Sheet CSV: personal sidecar log, fetched fresh each pipeline run
 
 ## Reference
 - OsmAnd GPX speed namespace: https://osmand.net/docs/technical/osmand-file-formats/osmand-gpx
 - ARAI baseline: 19.2 km/l (Exter AMT petrol)
 - Real-world city mileage expected: 13-15 km/l (Bengaluru stop-start)
 - Minimum trips before analysis meaningful: 40
-- Open-Meteo: free, no API key, historical hourly weather by lat/lon
-- Folium: Python library for interactive Leaflet maps
-- 5 real GPX files processed: 3 classified (1 valid return, 2 partial), 1 merged+discarded (unrelated), 1 road trip partial (Return from Kolar)
-- Google Drive GPX folder: G:\My Drive\Miscellaneous\GPX
-- master_trips.csv parser fields (15): filename, date, direction, departure_time, arrival_time, duration_min, distance_km, avg_speed_kmh, parking, partial, scenario_c, stop_detected, stop_duration_mins, adjusted_duration_mins, point_count
-- master_trips.csv enrichment fields (12): mileage_kmpl, day_type, notes, petrol_price_rs, fuel_cost_rs, day_of_week, week_num, temp_c, humidity_pct, rain_mm, wind_kmh, weather_code
-
----
-
-## Scenario Handling Reference
-
-### How each scenario is handled — sheet and parser
-
-| Scenario | Record GPX? | Sheet entry? | Parser behaviour | Notes column |
-|---|---|---|---|---|
-| Normal commute | Yes | 2 rows (one per leg) | Full trip extracted | — |
-| Petrol bunk stop (<10 min) | Yes, keep recording | Normal | Auto-split files merged | — |
-| Forgot to start at home | Yes, from wherever | Normal | Flagged partial=True | Optional: "partial recording" |
-| Sent to mall mid-trip (Scenario C) | Yes | 1 row Home->Office | Auto-detected from GPX path | — |
-| Shooting range / football (>30 min) | Stop, restart after | Normal for commute leg | Clean anchor-to-anchor trip | — |
-| Detour trip, no clean return GPX | Stop before detour | 1 row if commute leg exists | Detour portion discarded | "Detour" in Day Type |
-| Only one leg recorded | Yes | 1 row for that leg only | That leg processed independently | — |
-| WFH day | No | No entry needed | Nothing to process | — |
-| No recording at all | No | Optional: mileage only | No GPS data, mileage row kept for fuel trend | "no recording" |
-
-### Independence of legs
-- Outbound and return trips are fully independent records
-- A missing return GPX does not affect outbound analysis and vice versa
-- Missing legs show up only as thinner data for that direction — no errors, no corruption
-- Consistently missing one direction means that direction's departure time analysis will be less reliable
-
-### Day Type dropdown values (updated)
-Normal / Post-Holiday / Pre-Holiday / WFH / Detour / Other
-
-"Detour" signals that the return GPX is missing because of a deliberate stop — not a recording failure.
-Update this in Google Sheets: Data -> Data validation -> column D -> edit list.
+- Google Sheet CSV format: https://docs.google.com/spreadsheets/d/SHEET_ID/export?format=csv&gid=TAB_GID
+- OSRM routing: http://router.project-osrm.org/route/v1/driving/lon1,lat1;lon2,lat2?overview=full&geometries=geojson

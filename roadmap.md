@@ -19,7 +19,7 @@
 
 ---
 
-## Phase 2 — Enrichment (in progress)
+## Phase 2 — Enrichment (complete)
 
 **Goal:** Produce a complete `master_trips.csv` with all fields populated.
 
@@ -36,23 +36,53 @@
 
 **Goal:** Turn structured data into useful visuals.
 
-- [ ] `heatmap.html` — Folium map, road segments coloured green to red by speed
-- [ ] `dashboard.html` — departure time bucket analysis, route comparison, weekly fuel trends
-- [ ] `analysis.py` — script that reads `master_trips.csv` and generates both HTML outputs
 - [ ] `cluster.py` — path similarity clustering, assign descriptive route labels (e.g. "Via ORR")
   - Route labels added to `master_trips.csv` once clustering is stable
+- [ ] `heatmap.html` — Folium map, road segments coloured green to red by speed, anonymised (no home/office markers)
+- [ ] `dashboard.html` — departure time bucket analysis, route comparison, weekly fuel trends
+- [ ] `analysis.py` — script that reads `master_trips.csv` and generates both HTML outputs
 
 ---
 
-## Phase 4 — Portfolio (after ~40 trips and meaningful data)
+## Phase 4 — Demo mode and portfolio (after ~40 real trips)
 
-**Goal:** Make this presentable as a portfolio project.
+**Goal:** Make this presentable as a portfolio project without exposing personal location data.
 
-- [ ] Local web frontend to browse `master_trips.csv`, heatmap, and dashboard in one place
-  - Stack TBD: plain HTML/JS or minimal React. Lightweight, no build step preferred.
-- [ ] `README.md` — finalise with real heatmap screenshot as hero visual
-- [ ] Portfolio page on job-joseph.com
+### Synthetic demo mode (`generate_demo.py`)
+
+- [ ] `generate_demo.py` — synthetic GPX generator using OSRM road geometry for 4 fictional Bengaluru commuters:
+  - Whitefield → JP Nagar
+  - Marathahalli → HSR Layout
+  - Hebbal → Koramangala
+  - Electronic City → Indiranagar
+- [ ] Realistic speed profiles per segment: time-of-day and weather as inputs
+- [ ] Known Bengaluru bottlenecks baked in: Silk Board, Iblur, Marathahalli bridge, Hebbal flyover
+- [ ] `data/demo/` folder with pre-computed synthetic outputs (committed to GitHub)
+- [ ] Demo config: `config.demo.yaml` with synthetic anchor coordinates (no real locations)
+
+### Portfolio frontend
+
+- [ ] MapLibre GL JS + OpenFreeMap tiles — interactive commuter profile explorer
+  - Select commuter profile (4 corridors)
+  - Toggle departure time window (before 8am / 8-9am / after 9am)
+  - Toggle weather (clear / rain)
+  - See bottleneck heatmap update per selection
+  - See reliability score (variance, not just average) per route
+- [ ] Key narrative: distributional patterns over time, not real-time routing — what Google Maps cannot tell you
+
+### Portfolio polish
+
+- [ ] `README.md` — bold, personality-first, #e85d04 orange, shields.io badges, heatmap as hero visual
+- [ ] Portfolio page on job-joseph.com (Lovable prompt)
 - [ ] Add to CV alongside other projects
+- [ ] Clearly labelled "illustrative" on portfolio — real analysis runs locally
+
+### Narrative arc
+
+- Launch: synthetic demo + open-sourced pipeline
+- 3 months: 60+ real trips, anonymised aggregate insights published
+- 6 months: departure time prediction model — novel output beyond what Maps provides
+- The project gets more useful the longer it runs — rare for a portfolio project
 
 ---
 
@@ -85,6 +115,6 @@ The 40-trip threshold applies to commute optimisation specifically. The GPX reco
 ## Deferred / won't do (for now)
 
 - **OBD-II integration** — Hyundai Exter AMT does not expose standard OBD-II easily. Manual mileage from trip computer is sufficient.
-- **Automated GPX sync from Google Drive** — adds OAuth dependency for a one-minute manual step. Not worth it.
-- **Scheduled runs** — `python main.py` is the trigger. No cron, no daemon.
+- **Automated GPX sync from Google Drive** — adds OAuth dependency for a one-minute manual step. Not worth it. (Future option: FolderSync app on Android for automatic phone→Drive sync)
+- **Scheduled runs** — `python main.py` is the trigger. No cron, no daemon, no Task Scheduler.
 - **Real-time traffic overlay** — would require a paid maps API. Out of scope for personal project.

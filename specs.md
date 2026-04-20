@@ -10,6 +10,8 @@
 | Google Sheets sidecar | Mileage, day type, notes | Fetched live via CSV export URL in config.yaml |
 | Open-Meteo API | Hourly weather (temp, humidity, rain, wind, code) | HTTP GET, cached in `outputs/weather_cache.json` |
 | `petrol_prices.csv` | Petrol price by date range | Read from `data/reference/petrol_prices.csv` |
+| OSRM (router.project-osrm.org) | Road geometry for synthetic demo routes | HTTP GET, free, no API key. Used only by `generate_demo.py` |
+| OpenFreeMap tiles | Map tiles for portfolio frontend | Tile URL in frontend config. Free, no key |
 
 ---
 
@@ -217,4 +219,38 @@ Add a new row each time the pump price changes. Do not modify existing rows.
 | `outputs/processed.json` | No | Incremental processing state |
 | `outputs/weather_cache.json` | No | Cached Open-Meteo responses |
 | `data/reference/petrol_prices.csv` | Yes | Fuel price reference (no personal data) |
+| `data/demo/` | Yes | Synthetic commuter data for portfolio demo |
 | `config.example.yaml` | Yes | Placeholder template |
+
+---
+
+## Portfolio demo mode architecture
+
+### Purpose
+
+Real heatmaps and dashboards reveal personal home and office locations. The portfolio uses synthetic commuter profiles on real Bengaluru road geometry instead — no personal data exposed.
+
+### How it works
+
+1. `generate_demo.py` requests routes from OSRM for 4 fictional Bengaluru corridors:
+   - Whitefield → JP Nagar
+   - Marathahalli → HSR Layout
+   - Hebbal → Koramangala
+   - Electronic City → Indiranagar
+2. OSRM returns real road geometry (from OpenStreetMap) as GeoJSON coordinates
+3. The script generates synthetic GPX files with realistic speed profiles:
+   - Time-of-day variation (peak vs off-peak)
+   - Weather impact (rain slows traffic)
+   - Known bottleneck slowdowns (Silk Board, Iblur, Marathahalli bridge, Hebbal flyover)
+4. Output written to `data/demo/` — committed to GitHub so anyone can explore without personal data
+5. Pre-computed outputs (heatmap, dashboard) also stored in `data/demo/`
+
+### OSRM API usage
+
+```
+GET http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=full&geometries=geojson
+```
+
+- Free, no API key required
+- Returns road-snapped geometry following actual streets
+- Rate limit: be polite (1 req/sec) — geometry is cached after first fetch

@@ -103,3 +103,29 @@ Files are manually copied from Google Drive to `data/gpx/` before running the pi
 For stops longer than 30 minutes (shooting range, football), the correct OsmAnd action is to **pause** recording, not stop it. A paused recording resumes the same file when you restart; stopping and restarting creates two separate files.
 
 With a paused recording, the gap between the last pre-stop point and the first post-stop point is exactly the stop duration. The gap-based detector handles this correctly. If two separate files were created instead, they would be merged by `merge_consecutive_groups()` only if the gap is under 30 minutes — which it is not for a 60-minute stop. So the two files would be classified separately, potentially misclassified.
+
+---
+
+## Gap-based stop detection is the only correct approach for OsmAnd
+
+**What might seem obvious but isn't:** Most GPS stop detection looks for a run of speed=0 or speed<threshold readings. With OsmAnd's displacement-based recording, this approach fundamentally cannot work.
+
+**Why:** OsmAnd has a 10m minimum displacement threshold. When the car is parked, there is no displacement, so OsmAnd logs nothing. A 65-minute stop produces zero GPS points during the stop. There is no speed=0 run to detect — only a clean timestamp gap between the last point before parking and the first point after leaving.
+
+**Implication:** Any stop detection algorithm for OsmAnd data must be gap-based (look for time jumps between consecutive points at similar coordinates), not sequence-based (look for runs of low-speed readings). This is a fundamental property of the data source, not a design preference. The April 14 shooting range stop confirmed this: only 3 points below 15 km/h spanning <30 seconds, but a 65-minute timestamp gap.
+
+---
+
+## The portfolio privacy problem — solved by synthetic commuter profiles
+
+**The problem:** A speed heatmap of real commute data reveals your home and office locations with high precision. The start cluster is home; the end cluster is your workplace. Publishing this on a portfolio site is a non-starter for privacy.
+
+**Options considered:**
+1. Blur endpoints (add noise to first/last N points) — still reveals the corridor
+2. Show only mid-route segments — loses the context that makes it interesting
+3. Anonymise by aggregating across many users — don't have many users
+4. Synthetic commuter profiles on real road geometry — looks real, reveals nothing personal
+
+**Solution:** Use OSRM (free routing on OpenStreetMap) to get real Bengaluru road geometry for 4 fictional commuter corridors (Whitefield→JP Nagar, Marathahalli→HSR Layout, Hebbal→Koramangala, Electronic City→Indiranagar). Generate synthetic GPX files with realistic speed profiles that include known bottlenecks (Silk Board, Iblur, Marathahalli bridge, Hebbal flyover), time-of-day variation, and weather impact.
+
+**Why this works:** The portfolio demonstrates the analytical pipeline and visualisation quality without any personal data. The synthetic profiles use real road networks so the output looks genuine. The portfolio page is clearly labelled as illustrative. Real analysis stays entirely local.
