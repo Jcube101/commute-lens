@@ -36,6 +36,7 @@ Designed as a public GitHub project and portfolio piece.
 - **Google Sheet fetched as CSV** — sheet published as "Anyone with link can view", URL in config.yaml, fetched fresh on every run
 - **GPX sync is manual** — user copies from G:\My Drive\Miscellaneous\GPX to data/gpx/ before running pipeline
 - **Sheet is read-only** — pipeline never writes to it. View-only link is correct and intentional
+- **Bluelink API**: experimental investigation in Phase 2. Unofficial library (hyundai_kia_connect_api), India support limited and unverified. Only worth pursuing if it can auto-populate mileage — GPS track data is not available via Bluelink. Does not block any other phase
 
 ### Commute structure
 - User parks at a **nearby mall** most days — avoids traffic U-turn, saves ~15 mins
