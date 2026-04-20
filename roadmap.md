@@ -30,6 +30,15 @@
 - [x] Verify end-to-end: run `python main.py` with real sheet data and confirm all fields populated
 - [ ] Collect ~10 classified commute trips with full data before moving to Phase 3
 
+### Optional / experimental
+
+- [ ] **Bluelink API integration** (experimental, India support unverified)
+  - The `hyundai_kia_connect_api` Python library reverse-engineered the Hyundai Bluelink API and supports India as Region 6. If India trip data is available, it could auto-populate mileage (km/l) per trip — eliminating the one remaining manual entry in the sidecar sheet.
+  - Fields available per trip where supported: drive time, idle time, distance, avg speed, max speed. GPS track data is not available via Bluelink — only aggregate trip stats.
+  - Daily stats are confirmed working for Europe only; India availability is unverified.
+  - **To test:** install `hyundai-kia-connect-api`, instantiate `VehicleManager` with `region=6` (REGION_INDIA), `brand=2` (BRAND_HYUNDAI), and call `update_day_trip_info` for a recent date. If mileage data comes back, it can replace the manual mileage column in the sheet join. If not, drop it and move on.
+  - Credentials (Bluelink username, password, pin) go in `config.yaml` only — never committed.
+
 ---
 
 ## Phase 3 — Outputs (needs ~10+ real commute trips)
