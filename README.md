@@ -30,7 +30,10 @@ OsmAnd GPX files
   parser.py          — classify trips, detect stops, extract GPS metrics
       |
       v
-  weather.py         — fetch Open-Meteo hourly weather, cached locally
+  bluelink.py        — Hyundai Bluelink daily trip aggregates (optional)
+      |
+      v
+  weather.py         — Open-Meteo weather at departure hour, cached locally
       |
       v
   Google Sheet CSV   — mileage, day type, notes (fetched live)
@@ -39,7 +42,7 @@ OsmAnd GPX files
   petrol_prices.csv  — fuel price by date range
       |
       v
-  master_trips.csv   — enriched, one row per trip
+  master_trips.csv   ��� enriched, one row per trip
       |
       v
   heatmap + dashboard
@@ -103,6 +106,7 @@ Edit `config.yaml` and fill in:
 - Your home, office, and mall coordinates
 - Your vehicle name and ARAI fuel economy baseline
 - Your Google Sheet CSV export URL (`sheet_csv_url`)
+- (Optional) Hyundai Bluelink credentials — fetches daily trip aggregates automatically
 
 ### 3. Add GPX files
 
@@ -159,7 +163,7 @@ The interactive explorer lets you select a profile, toggle departure window and 
 ## Roadmap
 
 - **Phase 1** (complete): GPX parser, incremental processing, stop detection
-- **Phase 2** (complete): Weather enrichment, sheet join, petrol price, full pipeline
+- **Phase 2** (complete): Weather enrichment, sheet join, petrol price, Bluelink daily aggregates, full pipeline
 - **Phase 3**: Speed heatmap, departure time dashboard, fuel cost trends
 - **Phase 4**: Synthetic demo mode (OSRM + MapLibre GL JS), interactive portfolio frontend
 - **Phase 5**: Junction bottleneck ranking, day-of-week variance, seasonal patterns
