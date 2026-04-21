@@ -80,12 +80,12 @@ tripDrvTime (min), tripIdleTime (min), tripDist (km), tripAvgSpeed (km/h), tripM
 - **Kept recording through a long stop by mistake**: parser detects via gap analysis and subtracts stop duration. Both raw and adjusted duration recorded
 
 ### GPX data confirmed working
-- Tested with a road trip GPX file (~65 km, ~115 mins)
+- Tested with 17 real GPX files (12 classified trips, 3 discarded non-commute, 1 malformed skipped, 1 merged pair)
 - OsmAnd logs: lat/lon, timestamp, elevation, speed (m/s), HDOP at every point
 - Speed stored under OsmAnd namespace: https://osmand.net/docs/technical/osmand-file-formats/osmand-gpx
 - Point interval: ~5-6 seconds — sufficient for junction-level bottleneck detection
-- Parser must handle OsmAnd namespace explicitly when extracting speed
-- Gap-based stop detection is correct approach — OsmAnd stops logging when parked so there is no speed=0 run to detect, only a clean timestamp gap
+- Parser handles malformed GPX files gracefully (skips with warning)
+- Gap-based stop detection confirmed: 3 stops correctly detected (65.2, 51.3, 52.7 min)
 
 ### GPX file transfer method (manual, weekly)
 - Android 13+ blocks access to Android/data/ from Files app
@@ -117,6 +117,7 @@ All of the following are in config.yaml — gitignored, never leaves local machi
 - OFFICE coordinates
 - MALL name and coordinates
 - Google Sheet CSV URL (sheet_csv_url)
+- Bluelink credentials (username, password, pin) — optional
 
 config.example.yaml (committed to GitHub) contains only placeholder values.
 
@@ -208,7 +209,7 @@ Two consecutive GPX files <30 mins apart that together form valid anchor pair ->
 Re-merge: if new file is adjacent to already-processed file, old CSV row replaced with merged result.
 
 ### Mid-trip stop detection
-Speed < 5 km/h or timestamp gap > 20 min at non-anchor coordinates:
+Timestamp gap > 20 min + displacement < 150m + entry speed < 15 km/h + not at any anchor:
 - stop_detected = True, stop_duration_mins, adjusted_duration_mins recorded
 - Gap-based detection is correct — OsmAnd stops logging when parked (no speed=0 run)
 
@@ -303,7 +304,8 @@ outputs/processed.json tracks processed filenames. Each run only processes new f
 
 ## Data Sources
 - OsmAnd GPX: personal GPS recordings
-- Open-Meteo: free, no API key, historical + forecast weather by lat/lon
+- Open-Meteo: free, no API key, forecast API (<90 days) + archive API (older) for weather by lat/lon
+- Hyundai Bluelink: daily trip aggregates via `hyundai_kia_connect_api` (region=6 India). Optional — pipeline runs without it
 - OSRM (router.project-osrm.org): free routing API on OpenStreetMap for demo road geometry
 - OpenFreeMap tiles: free map tiles for portfolio frontend
 - Google Sheet CSV: personal sidecar log, fetched fresh each pipeline run
