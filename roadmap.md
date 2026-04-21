@@ -23,21 +23,22 @@
 
 **Goal:** Produce a complete `master_trips.csv` with all fields populated.
 
-- [x] `weather.py` — Open-Meteo fetch by lat/lon/datetime, local cache in `outputs/weather_cache.json`
-- [x] `main.py` — single entry point: runs parser incrementally, fetches sheet CSV live, looks up petrol price, enriches all rows with weather and derived fields, writes master_trips.csv
+- [x] `weather.py` — Open-Meteo forecast + archive APIs, fetches weather condition (Clear/Cloudy/Rain/Heavy Rain), temperature, precipitation. Uses OFFICE coordinates. Cached in `outputs/weather_cache.json`
+- [x] `bluelink.py` — Bluelink daily aggregate fetcher. Runs on every pipeline execution, fetches last 4 months of daily stats (distance, drive/idle time, avg/max speed, trip count), upserts to `outputs/bluelink_daily.csv`. Silent on failure — pipeline continues gracefully
+- [x] `main.py` — single entry point: runs parser incrementally, fetches Bluelink daily aggregates, fetches sheet CSV live, looks up petrol price, enriches all rows with weather and derived fields, writes master_trips.csv
 - [x] `petrol_prices.csv` seeded
 - [x] `sheet_csv_url` added to `config.yaml` — sheet fetched fresh on every run
-- [x] Verify end-to-end: run `python main.py` with real sheet data and confirm all fields populated
-- [ ] Collect ~10 classified commute trips with full data before moving to Phase 3
+- [x] Parser resilient to malformed GPX files (skips with warning instead of crashing)
+- [x] Verify end-to-end: `python main.py` tested with 17 GPX files (12 classified trips, 3 discarded, 1 malformed skipped), 10 sheet rows, weather for all dates, Bluelink 87 daily records
+- [x] 12 classified trips (4 full + 8 partial) with full data — ready for Phase 3
 
-### Optional / experimental
+### Bluelink API findings (2026-04-21)
 
-- [ ] **Bluelink API integration** (experimental, India support unverified)
-  - The `hyundai_kia_connect_api` Python library reverse-engineered the Hyundai Bluelink API and supports India as Region 6. If India trip data is available, it could auto-populate mileage (km/l) per trip — eliminating the one remaining manual entry in the sidecar sheet.
-  - Fields available per trip where supported: drive time, idle time, distance, avg speed, max speed. GPS track data is not available via Bluelink — only aggregate trip stats.
-  - Daily stats are confirmed working for Europe only; India availability is unverified.
-  - **To test:** install `hyundai-kia-connect-api`, instantiate `VehicleManager` with `region=6` (REGION_INDIA), `brand=2` (BRAND_HYUNDAI), and call `update_day_trip_info` for a recent date. If mileage data comes back, it can replace the manual mileage column in the sheet join. If not, drop it and move on.
-  - Credentials (Bluelink username, password, pin) go in `config.yaml` only — never committed.
+- Login works (region=6, brand=2, `hyundai_kia_connect_api` v4.10.3). Vehicle discovered, monthly and daily aggregates returned
+- **Per-trip mileage (km/l) is not available** from the India API — cannot replace manual sheet entry
+- Per-trip data limited to: start/end timestamps and start/end coordinates. Per-trip drive time, distance, speed exist only as daily aggregates
+- History depth: Jan 2026 – present (~4 months). Dec 2025 and earlier returns empty
+- Library bug: `update_day_trip_info()` crashes on India data (missing `tripTime` field). Raw JSON via `_get_trip_info()` works — used in `bluelink.py`
 
 ---
 

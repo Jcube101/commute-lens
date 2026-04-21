@@ -168,7 +168,11 @@ def load_and_sort_gpx_files(
     """Parse all GPX files in gpx_dir and return them sorted by first timestamp."""
     results: List[Tuple[str, List[TrackPoint]]] = []
     for gpx_file in sorted(Path(gpx_dir).glob("*.gpx")):
-        points = parse_gpx(str(gpx_file))
+        try:
+            points = parse_gpx(str(gpx_file))
+        except ET.ParseError as exc:
+            print(f"  WARNING: skipping malformed GPX {gpx_file.name} — {exc}")
+            continue
         if points:
             results.append((gpx_file.name, points))
     results.sort(key=lambda x: x[1][0].time)

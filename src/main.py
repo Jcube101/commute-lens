@@ -36,6 +36,7 @@ from parser import (  # noqa: E402
     save_processed,
     write_csv_incremental,
 )
+from bluelink import fetch_bluelink_daily  # noqa: E402
 from weather import get_weather_for_trip, load_cache, save_cache  # noqa: E402
 
 
@@ -45,18 +46,16 @@ from weather import get_weather_for_trip, load_cache, save_cache  # noqa: E402
 
 # Enrichment fields added by main.py on top of the parser's CSV_FIELDS
 ENRICHMENT_FIELDS = [
-    "mileage_kmpl",    # from sheet join
-    "day_type",        # from sheet join
-    "notes",           # from sheet join
-    "petrol_price_rs", # from petrol_prices.csv date range lookup
-    "fuel_cost_rs",    # distance_km / mileage_kmpl * petrol_price_rs
-    "day_of_week",     # derived from date (Monday, Tuesday, ...)
-    "week_num",        # ISO week number derived from date
-    "temp_c",          # Open-Meteo temperature at departure
-    "humidity_pct",    # Open-Meteo relative humidity at departure
-    "rain_mm",         # Open-Meteo rain at departure hour
-    "wind_kmh",        # Open-Meteo wind speed at departure
-    "weather_code",    # Open-Meteo WMO weather code at departure
+    "mileage_kmpl",       # from sheet join
+    "day_type",           # from sheet join
+    "notes",              # from sheet join
+    "petrol_price_rs",    # from petrol_prices.csv date range lookup
+    "fuel_cost_rs",       # distance_km / mileage_kmpl * petrol_price_rs
+    "day_of_week",        # derived from date (Monday, Tuesday, ...)
+    "week_num",           # ISO week number derived from date
+    "weather_condition",  # Open-Meteo: Clear / Cloudy / Rain / Heavy Rain
+    "temp_c",             # Open-Meteo temperature at departure
+    "precipitation_mm",   # Open-Meteo precipitation at departure hour
 ]
 
 ALL_FIELDS = CSV_FIELDS + ENRICHMENT_FIELDS
@@ -184,8 +183,8 @@ def enrich_row(
     sheet_index: Dict,
     petrol_prices: List[Dict],
     weather_cache: Dict,
-    home_lat: float,
-    home_lon: float,
+    weather_lat: float,
+    weather_lon: float,
 ) -> Dict:
     """
     Fill enrichment fields for a single trip row.
@@ -231,18 +230,15 @@ def enrich_row(
             row["day_of_week"] = ""
             row["week_num"] = ""
 
-    # --- Weather (HOME coordinates used as trip origin proxy) ---
-    if not row.get("temp_c"):
+    # --- Weather (office/mall coordinates — commute destination area) ---
+    if not row.get("weather_condition"):
         departure_time = row.get("departure_time", "")
         if departure_time:
             weather = get_weather_for_trip(
-                home_lat, home_lon, departure_time, weather_cache
+                weather_lat, weather_lon, departure_time, weather_cache
             )
-            row["temp_c"] = "" if weather["temp_c"] is None else weather["temp_c"]
-            row["humidity_pct"] = "" if weather["humidity_pct"] is None else weather["humidity_pct"]
-            row["rain_mm"] = "" if weather["rain_mm"] is None else weather["rain_mm"]
-            row["wind_kmh"] = "" if weather["wind_kmh"] is None else weather["wind_kmh"]
-            row["weather_code"] = "" if weather["weather_code"] is None else weather["weather_code"]
+            for field in ("weather_condition", "temp_c", "precipitation_mm"):
+                row[field] = "" if weather[field] is None else weather[field]
 
     return row
 
@@ -306,7 +302,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     # Step 1: Run parser incrementally
     # ------------------------------------------------------------------
-    print("\n[1/4] Running GPX parser...")
+    print("\n[1/5] Running GPX parser...")
     processed_files = load_processed(str(processed_json))
     all_gpx = {p.name for p in Path(gpx_dir).glob("*.gpx")}
     new_files = all_gpx - processed_files
@@ -326,9 +322,22 @@ if __name__ == "__main__":
         print("  No new GPX files.")
 
     # ------------------------------------------------------------------
-    # Step 2: Fetch sheet data
+    # Step 2: Fetch Bluelink daily aggregates
     # ------------------------------------------------------------------
-    print("\n[2/4] Fetching sheet data...")
+    print("\n[2/5] Fetching Bluelink daily aggregates...")
+    bluelink_csv = outputs_dir / "bluelink_daily.csv"
+    result = fetch_bluelink_daily(cfg, str(bluelink_csv))
+    if result is None:
+        print("  Bluelink unavailable — skipped.")
+    elif result == 0:
+        print("  No new Bluelink data.")
+    else:
+        print(f"  {result} day(s) in {bluelink_csv}")
+
+    # ------------------------------------------------------------------
+    # Step 3: Fetch sheet data
+    # ------------------------------------------------------------------
+    print("\n[3/5] Fetching sheet data...")
     if sheet_csv_url:
         sheet_rows = load_sheet_csv(sheet_csv_url)
         sheet_index = build_sheet_index(sheet_rows)
@@ -338,16 +347,16 @@ if __name__ == "__main__":
         print("  WARNING: sheet_csv_url not set in config.yaml — skipping sheet join.")
 
     # ------------------------------------------------------------------
-    # Step 3: Load petrol prices
+    # Step 4: Load petrol prices
     # ------------------------------------------------------------------
-    print("\n[3/4] Loading petrol prices...")
+    print("\n[4/5] Loading petrol prices...")
     petrol_prices = load_petrol_prices(str(petrol_prices_path))
     print(f"  {len(petrol_prices)} price period(s) loaded.")
 
     # ------------------------------------------------------------------
-    # Step 4: Enrich all trips
+    # Step 5: Enrich all trips
     # ------------------------------------------------------------------
-    print("\n[4/4] Enriching trips with weather, sheet, and petrol data...")
+    print("\n[5/5] Enriching trips with weather, sheet, and petrol data...")
     weather_cache = load_cache(str(weather_cache_path))
     all_rows = read_master_csv(str(output_csv))
 
@@ -359,7 +368,7 @@ if __name__ == "__main__":
     for row in all_rows:
         enriched.append(
             enrich_row(row, sheet_index, petrol_prices, weather_cache,
-                       home.lat, home.lon)
+                       office.lat, office.lon)
         )
 
     save_cache(str(weather_cache_path), weather_cache)

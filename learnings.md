@@ -129,3 +129,29 @@ With a paused recording, the gap between the last pre-stop point and the first p
 **Solution:** Use OSRM (free routing on OpenStreetMap) to get real Bengaluru road geometry for 4 fictional commuter corridors (Whitefield→JP Nagar, Marathahalli→HSR Layout, Hebbal→Koramangala, Electronic City→Indiranagar). Generate synthetic GPX files with realistic speed profiles that include known bottlenecks (Silk Board, Iblur, Marathahalli bridge, Hebbal flyover), time-of-day variation, and weather impact.
 
 **Why this works:** The portfolio demonstrates the analytical pipeline and visualisation quality without any personal data. The synthetic profiles use real road networks so the output looks genuine. The portfolio page is clearly labelled as illustrative. Real analysis stays entirely local.
+
+---
+
+## Weather fetched at OFFICE coordinates, not HOME
+
+**What I changed:** Weather is fetched using the OFFICE/MALL area coordinates rather than HOME.
+
+**Why:** The commute corridor's weather conditions matter more at the destination end, where Bengaluru's microclimate variation is most relevant to the trip. The office area (Koramangala) and home area are ~18 km apart — weather can differ meaningfully, especially during monsoon.
+
+**API choice:** Open-Meteo's forecast API only covers ~92 days of history. For older trip dates, `weather.py` automatically switches to the archive API (`archive-api.open-meteo.com`). The field set was simplified from the original 5 fields (temp, humidity, rain, wind, WMO code) to 3: `weather_condition` (Clear/Cloudy/Rain/Heavy Rain mapped from WMO codes), `temp_c`, `precipitation_mm`. The human-readable condition is more useful for analysis than a raw WMO integer.
+
+---
+
+## Bluelink API does not provide per-trip mileage for India
+
+**What I tested:** `hyundai_kia_connect_api` v4.10.3 with region=6 (India), brand=2 (Hyundai), against a Hyundai Exter AMT registered Dec 2024.
+
+**What works:** Login, vehicle discovery, monthly aggregates (total distance, drive time, idle time, avg/max speed, list of driving days with trip counts). Per-trip data includes start/end timestamps and start/end lat/lon coordinates.
+
+**What does not work:** Per-trip mileage (km/l) — the one field that would have eliminated the manual sheet entry. India API returns no fuel efficiency data at any granularity. Per-trip drive time, distance, and speed are also absent — only daily aggregates exist.
+
+**Library bug encountered:** `update_day_trip_info()` crashes with `AttributeError: 'NoneType' object has no attribute 'hhmmss'`. The India API returns trip entries without the `tripTime` field that the library unconditionally accesses. The raw JSON via `_get_trip_info(token, vehicle, date_string, 1)` works fine and is how I extracted the per-trip fields.
+
+**History depth:** Only Jan 2026 – present (~4 months back from April 2026). Dec 2025 and earlier returns empty responses despite the car being registered Dec 2024. Either the India server has a short retention window or Bluelink was not activated until Jan 2026.
+
+**Decision:** Cannot replace manual mileage entry, but daily aggregates are useful supplementary data. `bluelink.py` fetches last 4 months of daily aggregates on every pipeline run and upserts to `outputs/bluelink_daily.csv`. Uses the raw `_get_trip_info()` method to avoid the library crash. Pipeline continues gracefully if Bluelink is unavailable — fetch errors are logged and skipped.
