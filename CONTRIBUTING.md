@@ -87,9 +87,15 @@ paths:
   sheet_log: data/reference/sheet_log.csv
   petrol_prices: data/reference/petrol_prices.csv
   outputs: outputs/
+
+# Optional — Hyundai Bluelink (fetches daily trip aggregates)
+# bluelink:
+#   username: <your Bluelink email>
+#   password: <your Bluelink password>
+#   pin: <your Bluelink PIN>
 ```
 
-`config.yaml` is gitignored — your personal data stays local.
+`config.yaml` is gitignored — your personal data stays local. Bluelink credentials are optional — the pipeline runs without them.
 
 ---
 
@@ -155,12 +161,13 @@ python main.py
 ```
 
 This will:
-1. Parse all GPX files in `data/gpx/`
+1. Parse all GPX files in `data/gpx/` (malformed files are skipped with a warning)
 2. Classify and filter trips against your anchors
-3. Fetch weather for each trip from Open-Meteo (cached locally after first fetch)
-4. Join with your sheet data on date + direction
-5. Look up petrol price by date
-6. Write `outputs/master_trips.csv` with all fields
+3. Fetch Bluelink daily aggregates if credentials are configured (writes `outputs/bluelink_daily.csv`)
+4. Fetch weather for each trip from Open-Meteo (cached locally after first fetch)
+5. Join with your sheet data on date + direction
+6. Look up petrol price by date
+7. Write `outputs/master_trips.csv` with all fields
 
 Check the console output to verify trip classifications look correct. If trips are being discarded as "unrelated", check that your anchor coordinates and radius values are right.
 
@@ -194,4 +201,4 @@ The synthetic data includes realistic speed profiles with time-of-day variation,
 
 **Stop detection flagging normal driving:** The 150m displacement guard usually prevents false positives, but on a very slow road (< 15 km/h) a traffic jam pause could get flagged. Increase `stop_min_minutes` in config.yaml if this happens.
 
-**Weather fetch returning None:** Open-Meteo's forecast API covers up to 92 days in the past. Trips older than ~3 months will return empty weather fields. The archive API would be needed for older data — not currently implemented.
+**Weather fetch returning None:** Open-Meteo's forecast API covers ~92 days of history; the archive API handles older dates automatically. If both fail, weather fields will be empty for that trip — the pipeline continues without them.
