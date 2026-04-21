@@ -1,8 +1,9 @@
 # Phase 1 — parser (GPX ingestion and classification)
 pyyaml>=6.0
 
-# Phase 2 — enrichment (weather, sheet join, petrol price, full pipeline)
+# Phase 2 — enrichment (weather, sheet join, petrol price, Bluelink, full pipeline)
 requests>=2.31
+hyundai-kia-connect-api>=4.10
 
 # Phase 3 — outputs (heatmap, dashboard)
 # pandas

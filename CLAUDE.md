@@ -27,7 +27,7 @@ Designed as a public GitHub project and portfolio piece.
 - **Sheet is a minimal sidecar log** — not the primary data store. GPX is the source of truth
 - **Route labelling is automatic** — parser clusters trips by path similarity. No manual labels
 - **Parking auto-detected** from GPX endpoint coordinates (home vs office vs mall)
-- **Weather auto-fetched** from Open-Meteo API (free, no key) using trip date/time
+- **Weather auto-fetched** from Open-Meteo API (free, no key) using OFFICE coordinates and trip departure hour. Forecast API for recent dates, archive API for >90 days. Fields: weather condition (Clear/Cloudy/Rain/Heavy Rain), temperature, precipitation
 - **Petrol price** stored in a reference table with date ranges — not a per-trip manual field
 - **Route labels** will be descriptive (e.g. "Via ORR") not arbitrary letters
 - **config.yaml in .gitignore** — all personal coordinates and location data lives here only
@@ -36,7 +36,34 @@ Designed as a public GitHub project and portfolio piece.
 - **Google Sheet fetched as CSV** — sheet published as "Anyone with link can view", URL in config.yaml, fetched fresh on every run
 - **GPX sync is manual** — user copies from G:\My Drive\Miscellaneous\GPX to data/gpx/ before running pipeline
 - **Sheet is read-only** — pipeline never writes to it. View-only link is correct and intentional
-- **Bluelink API**: experimental investigation in Phase 2. Unofficial library (hyundai_kia_connect_api), India support limited and unverified. Only worth pursuing if it can auto-populate mileage — GPS track data is not available via Bluelink. Does not block any other phase
+- **Bluelink API**: tested 2026-04-21. Per-trip mileage NOT available from India API — cannot replace manual sheet entry. But daily aggregates (distance, drive time, idle time, avg/max speed, trip count) work and are fetched on every pipeline run via `bluelink.py`. See findings below
+
+### Bluelink API experiment results (2026-04-21)
+
+**What works (India, Hyundai Exter):**
+- Login and vehicle discovery: VIN, model, registration date confirmed
+- Monthly aggregates: total drive time, idle time, distance, avg speed, max speed, plus list of days with trip counts
+- Per-trip data: start/end timestamps (YYYYMMDDHHmmSS format), start/end lat/lon coordinates
+- History depth: Jan 2026 – present (4 months). Dec 2025 and earlier returns empty — either server retention limit or Bluelink activation date
+
+**What does NOT work:**
+- **No per-trip mileage (km/l)** — the field we needed to replace manual sheet entry. India API does not return fuel efficiency data at any granularity
+- **No per-trip drive time, idle time, distance, avg/max speed** — these exist only as daily aggregates, not per individual trip
+- `update_day_trip_info()` crashes with `AttributeError: 'NoneType' object has no attribute 'hhmmss'` — library bug. India API returns trips without `tripTime` field; library assumes it exists. Raw JSON via `_get_trip_info()` works fine
+
+**Available per-trip fields (India):**
+```
+serviceTID, tripStartTime, tripStartCoord {lat, lon}, tripEndTime, tripEndCoord {lat, lon}
+```
+
+**Available per-day aggregate fields:**
+```
+tripDrvTime (min), tripIdleTime (min), tripDist (km), tripAvgSpeed (km/h), tripMaxSpeed (km/h)
+```
+
+**Monthly data sample (Apr 2026):** 811 km across 16 driving days, 2042 min drive time, 685 min idle time, avg 24.2 km/h, max 132 km/h
+
+**Verdict:** Cannot replace manual mileage column, but daily aggregates are useful supplementary data. `bluelink.py` runs on every `python main.py` execution, fetches last 4 months of daily aggregates via raw `_get_trip_info()`, and upserts to `outputs/bluelink_daily.csv` keyed on date. Pipeline continues gracefully if Bluelink is unavailable — fetch errors are logged and skipped
 
 ### Commute structure
 - User parks at a **nearby mall** most days — avoids traffic U-turn, saves ~15 mins
@@ -108,10 +135,12 @@ commute-lens/
     master_trips.csv         <- one row per trip, all fields merged
     processed.json           <- tracks which GPX files have been processed (incremental)
     weather_cache.json       <- cached Open-Meteo responses to avoid re-fetching
+    bluelink_daily.csv       <- Bluelink daily aggregates (date, distance, drive/idle time, speed, trip count)
     heatmap.html             <- speed-coloured map of road segments
     dashboard.html           <- summary charts and trends
   src/
     parser.py                <- GPX ingestion, trip classifier, merger, stop detection, haversine
+    bluelink.py              <- Bluelink daily aggregate fetcher, upserts to outputs/bluelink_daily.csv
     weather.py               <- Open-Meteo fetch by lat/lon/datetime with local cache
     cluster.py               <- route clustering by path similarity, descriptive labels
     analysis.py              <- heatmap and dashboard generation
@@ -192,14 +221,15 @@ outputs/processed.json tracks processed filenames. Each run only processes new f
 
 1. Check for new GPX files not in processed.json
 2. Parse new files: classify, merge, extract, detect stops
-3. Fetch weather from Open-Meteo (use cache if already fetched for that date/location)
-4. Fetch sidecar sheet CSV fresh from sheet_csv_url in config.yaml
-5. Join on date + direction
-6. Look up petrol price by date range from petrol_prices.csv
-7. Calculate fuel cost
-8. Cluster all trips by path similarity -> descriptive route labels
-9. Append to master_trips.csv
-10. Regenerate heatmap.html and dashboard.html
+3. Fetch Bluelink daily aggregates (last 4 months) → upsert to outputs/bluelink_daily.csv (silent on failure)
+4. Fetch weather from Open-Meteo (use cache if already fetched for that date/location)
+5. Fetch sidecar sheet CSV fresh from sheet_csv_url in config.yaml
+6. Join on date + direction
+7. Look up petrol price by date range from petrol_prices.csv
+8. Calculate fuel cost
+9. Cluster all trips by path similarity -> descriptive route labels
+10. Append to master_trips.csv
+11. Regenerate heatmap.html and dashboard.html
 
 ---
 
@@ -216,10 +246,12 @@ outputs/processed.json tracks processed filenames. Each run only processes new f
 - [x] parser.py — classifier, merger, haversine, speed extraction, parking, partial flag
 - [x] Mid-trip stop detection (gap-based)
 - [x] Incremental processing with processed.json
-- [x] weather.py with local cache
+- [x] weather.py — forecast + archive API, OFFICE coordinates, condition/temp/precipitation, cached
+- [x] bluelink.py — daily aggregate fetcher, runs on every pipeline execution, 4-month lookback
 - [x] Google Sheet CSV fetch in main.py
 - [x] Petrol price lookup from petrol_prices.csv
-- [x] Join pipeline verified end-to-end
+- [x] Parser resilient to malformed GPX files (skips with warning)
+- [x] Join pipeline verified end-to-end — 17 GPX files, 12 trips, 10 sheet rows, weather + Bluelink all populated
 - [x] requirements.txt created
 - [x] All markdown files created: README, CLAUDE, learnings, specs, roadmap, CONTRIBUTING
 - [x] All changes committed and pushed to GitHub

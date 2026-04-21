@@ -30,3 +30,10 @@ paths:
   sheet_log: data/reference/sheet_log.csv
   petrol_prices: data/reference/petrol_prices.csv
   outputs: outputs/
+
+# Optional — Bluelink daily aggregates (Hyundai vehicles only)
+# Pipeline runs without these; if present, fetches daily trip stats
+# bluelink:
+#   username: YOUR_BLUELINK_EMAIL
+#   password: YOUR_BLUELINK_PASSWORD
+#   pin: YOUR_BLUELINK_PIN

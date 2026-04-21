@@ -8,7 +8,8 @@
 |---|---|---|
 | OsmAnd GPX files | GPS track points (lat/lon/time/speed/ele/hdop) | Manual copy to `data/gpx/` before pipeline run |
 | Google Sheets sidecar | Mileage, day type, notes | Fetched live via CSV export URL in config.yaml |
-| Open-Meteo API | Hourly weather (temp, humidity, rain, wind, code) | HTTP GET, cached in `outputs/weather_cache.json` |
+| Open-Meteo API | Hourly weather (condition, temp, precipitation) | HTTP GET, forecast + archive APIs, cached in `outputs/weather_cache.json` |
+| Hyundai Bluelink API | Daily trip aggregates (distance, drive/idle time, speed) | `hyundai_kia_connect_api` v4.10.3, region=6 (India), cached in `outputs/bluelink_daily.csv` |
 | `petrol_prices.csv` | Petrol price by date range | Read from `data/reference/petrol_prices.csv` |
 | OSRM (router.project-osrm.org) | Road geometry for synthetic demo routes | HTTP GET, free, no API key. Used only by `generate_demo.py` |
 | OpenFreeMap tiles | Map tiles for portfolio frontend | Tile URL in frontend config. Free, no key |
@@ -50,11 +51,9 @@ One row per classified trip. All fields are strings in the CSV.
 | `fuel_cost_rs` | float | Derived | distance_km / mileage_kmpl * petrol_price_rs |
 | `day_of_week` | str | Derived from date | "Monday", "Tuesday", etc. |
 | `week_num` | int | Derived from date | ISO week number |
-| `temp_c` | float | Open-Meteo | Temperature at departure hour |
-| `humidity_pct` | float | Open-Meteo | Relative humidity at departure hour |
-| `rain_mm` | float | Open-Meteo | Rainfall at departure hour |
-| `wind_kmh` | float | Open-Meteo | Wind speed at departure hour |
-| `weather_code` | int | Open-Meteo | WMO weather interpretation code |
+| `weather_condition` | str | Open-Meteo | Clear / Cloudy / Rain / Heavy Rain (from WMO code) |
+| `temp_c` | float | Open-Meteo | Temperature at departure hour (°C) |
+| `precipitation_mm` | float | Open-Meteo | Precipitation at departure hour (mm) |
 
 ---
 
@@ -93,26 +92,32 @@ paths:
   sheet_log: data/reference/sheet_log.csv    # legacy path, kept for reference
   petrol_prices: data/reference/petrol_prices.csv
   outputs: outputs/
+
+bluelink:
+  username: <Bluelink email>
+  password: <Bluelink password>
+  pin: <Bluelink PIN>
 ```
 
-`config.yaml` is gitignored. `config.example.yaml` (committed) contains only placeholder values.
+`config.yaml` is gitignored. `config.example.yaml` (committed) contains only placeholder values. Bluelink credentials are optional — pipeline runs without them.
 
 ---
 
 ## Pipeline steps (main.py)
 
 1. **Load config** — read `config.yaml`, build Anchor objects for HOME, OFFICE, MALL
-2. **Incremental GPX parse** — compare `data/gpx/*.gpx` against `outputs/processed.json`; parse only new files
+2. **Incremental GPX parse** — compare `data/gpx/*.gpx` against `outputs/processed.json`; parse only new files. Malformed GPX files are skipped with a warning
 3. **Merge consecutive groups** — files with inter-file gap < 30 min are merged before classification
 4. **Classify trips** — each group classified against anchor pairs; see classification rules below
 5. **Detect stops** — gap-based stop detector run on each classified trip
 6. **Write parser output** — append new rows to `master_trips.csv`; remove superseded rows on re-merge
-7. **Fetch sheet CSV** — `requests.get(sheet_csv_url)` on every run; parse and index by (date, direction)
-8. **Load petrol prices** — read date-range table from `petrol_prices.csv`
-9. **Load weather cache** — read `outputs/weather_cache.json`
-10. **Enrich all rows** — for each row in `master_trips.csv`, fill missing enrichment fields
-11. **Save weather cache** — write updated cache back to disk
-12. **Write master_trips.csv** — overwrite with full enriched field set
+7. **Fetch Bluelink daily aggregates** — last 4 months of daily trip stats via `_get_trip_info()`, upserted to `outputs/bluelink_daily.csv`. Silent on failure
+8. **Fetch sheet CSV** — `requests.get(sheet_csv_url)` on every run; parse and index by (date, direction)
+9. **Load petrol prices** — read date-range table from `petrol_prices.csv`
+10. **Load weather cache** — read `outputs/weather_cache.json`
+11. **Enrich all rows** — for each row in `master_trips.csv`, fill missing enrichment fields. Weather fetched from OFFICE coordinates using forecast API (recent) or archive API (>90 days)
+12. **Save weather cache** — write updated cache back to disk
+13. **Write master_trips.csv** — overwrite with full enriched field set
 
 ---
 
@@ -180,17 +185,42 @@ OsmAnd auto-splits recordings after a configurable inactivity gap (set to 10 min
 
 ## Weather API
 
-Open-Meteo forecast API (free, no API key required):
+Open-Meteo (free, no API key required). Two endpoints:
+
+- **Forecast API** — dates within 90 days: `https://api.open-meteo.com/v1/forecast`
+- **Archive API** — older dates: `https://archive-api.open-meteo.com/v1/archive`
 
 ```
-GET https://api.open-meteo.com/v1/forecast
+GET {base_url}
     ?latitude={lat}&longitude={lon}
-    &hourly=temperature_2m,relative_humidity_2m,rain,windspeed_10m,weathercode
+    &hourly=temperature_2m,precipitation,weather_code
     &start_date={date}&end_date={date}
     &timezone=Asia/Kolkata
 ```
 
-HOME coordinates are used as the weather location proxy (departure point). The hour index matching `departure_time` is selected from the hourly array. Results are cached by `{rounded_lat}_{rounded_lon}_{date}` key.
+OFFICE coordinates are used as the weather fetch location (commute destination area). The hour index matching `departure_time` is selected from the hourly array. WMO weather codes are mapped to human-readable conditions: Clear, Cloudy, Rain, Heavy Rain. Results are cached by `{rounded_lat}_{rounded_lon}_{date}` key.
+
+---
+
+## Bluelink daily aggregates
+
+`bluelink.py` fetches daily trip aggregates from the Hyundai Bluelink API (India, region=6) on every pipeline run. Uses the raw `_get_trip_info()` method since the library's `update_day_trip_info()` crashes on India data.
+
+**Output:** `outputs/bluelink_daily.csv` — one row per driving day, upserted by date.
+
+| Field | Type | Notes |
+|---|---|---|
+| `date` | YYYY-MM-DD | Driving day |
+| `total_distance_km` | int | Total distance across all trips that day |
+| `drive_time_mins` | int | Total driving time |
+| `idle_time_mins` | int | Total idle time |
+| `avg_speed_kmh` | float | Average speed |
+| `max_speed_kmh` | int | Max speed reached |
+| `trip_count` | int | Number of individual trips |
+
+**Lookback:** current month + previous 3 months. History available from Jan 2026.
+
+**Failure mode:** if Bluelink login or fetch fails for any reason, the error is logged and the pipeline continues. Bluelink is supplementary data — never blocks the pipeline.
 
 ---
 
@@ -218,6 +248,7 @@ Add a new row each time the pump price changes. Do not modify existing rows.
 | `outputs/master_trips.csv` | No | Enriched trip data |
 | `outputs/processed.json` | No | Incremental processing state |
 | `outputs/weather_cache.json` | No | Cached Open-Meteo responses |
+| `outputs/bluelink_daily.csv` | No | Bluelink daily trip aggregates |
 | `data/reference/petrol_prices.csv` | Yes | Fuel price reference (no personal data) |
 | `data/demo/` | Yes | Synthetic commuter data for portfolio demo |
 | `config.example.yaml` | Yes | Placeholder template |

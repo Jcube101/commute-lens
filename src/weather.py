@@ -1,35 +1,40 @@
 #!/usr/bin/env python3
 """
-weather.py — Fetch hourly weather from Open-Meteo for commute trips.
+weather.py — Fetch historical hourly weather from Open-Meteo.
 
-Uses the Open-Meteo forecast API (free, no API key required).
-Supports up to 92 days of historical data via the past_days parameter.
-Results cached in outputs/weather_cache.json to avoid re-fetching.
-
-Cache key: "{rounded_lat}_{rounded_lon}_{date}"
-Each entry stores the raw hourly payload for the day.
+Uses the forecast API for dates within 92 days, archive API for older dates.
+Results cached in outputs/weather_cache.json keyed by date + rounded location.
 """
 
 import json
 import os
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Dict, Optional
 import urllib.request
 import urllib.parse
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
-HOURLY_VARS = (
-    "temperature_2m,relative_humidity_2m,rain,windspeed_10m,weathercode"
-)
+ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+HOURLY_VARS = "temperature_2m,precipitation,weather_code"
 
+WMO_CONDITIONS = {
+    0: "Clear",
+    1: "Clear", 2: "Cloudy", 3: "Cloudy",
+    45: "Cloudy", 48: "Cloudy",
+    51: "Rain", 53: "Rain", 55: "Rain",
+    56: "Rain", 57: "Rain",
+    61: "Rain", 63: "Rain", 65: "Heavy Rain",
+    66: "Rain", 67: "Heavy Rain",
+    71: "Rain", 73: "Rain", 75: "Heavy Rain",
+    77: "Rain",
+    80: "Rain", 81: "Rain", 82: "Heavy Rain",
+    85: "Rain", 86: "Heavy Rain",
+    95: "Heavy Rain", 96: "Heavy Rain", 99: "Heavy Rain",
+}
 
-# ---------------------------------------------------------------------------
-# Cache I/O
-# ---------------------------------------------------------------------------
 
 def load_cache(cache_path: str) -> Dict:
-    """Load the local weather cache from disk. Returns empty dict if absent."""
     p = Path(cache_path)
     if p.exists():
         with open(p, encoding="utf-8") as f:
@@ -38,84 +43,50 @@ def load_cache(cache_path: str) -> Dict:
 
 
 def save_cache(cache_path: str, cache: Dict) -> None:
-    """Persist the weather cache to disk."""
     os.makedirs(os.path.dirname(os.path.abspath(cache_path)), exist_ok=True)
     with open(cache_path, "w", encoding="utf-8") as f:
         json.dump(cache, f)
 
 
-def _cache_key(lat: float, lon: float, date: str) -> str:
-    """Cache key rounded to 2 decimal places so nearby points share an entry."""
-    return f"{round(lat, 2)}_{round(lon, 2)}_{date}"
+def _cache_key(lat: float, lon: float, date_str: str) -> str:
+    return f"{round(lat, 2)}_{round(lon, 2)}_{date_str}"
 
 
-# ---------------------------------------------------------------------------
-# API fetch
-# ---------------------------------------------------------------------------
+def _fetch_hourly(lat: float, lon: float, date_str: str) -> Optional[Dict]:
+    days_ago = (date.today() - date.fromisoformat(date_str)).days
+    base_url = FORECAST_URL if days_ago <= 90 else ARCHIVE_URL
 
-def _fetch_hourly(lat: float, lon: float, date: str) -> Optional[Dict]:
-    """
-    Fetch hourly weather for a single date from Open-Meteo.
-
-    Returns the 'hourly' sub-dict from the API response, or None on failure.
-    """
     params = urllib.parse.urlencode({
         "latitude": round(lat, 4),
         "longitude": round(lon, 4),
         "hourly": HOURLY_VARS,
-        "start_date": date,
-        "end_date": date,
+        "start_date": date_str,
+        "end_date": date_str,
         "timezone": "Asia/Kolkata",
     })
-    url = f"{FORECAST_URL}?{params}"
+    url = f"{base_url}?{params}"
     try:
         with urllib.request.urlopen(url, timeout=15) as resp:
             data = json.loads(resp.read())
         return data.get("hourly")
     except Exception as exc:
-        print(
-            f"  [weather] WARNING: could not fetch {date} "
-            f"at ({lat:.2f}, {lon:.2f}): {exc}"
-        )
+        print(f"  [weather] WARNING: fetch failed for {date_str}: {exc}")
         return None
 
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 def get_weather_for_trip(
     lat: float,
     lon: float,
     departure_time_str: str,
     cache: Dict,
-) -> Dict[str, Optional[float]]:
-    """
-    Return weather conditions at departure time for a trip.
-
-    Parameters
-    ----------
-    lat, lon           : trip departure coordinates (HOME lat/lon used)
-    departure_time_str : formatted string from parser, e.g.
-                         "2026-04-14 19:00:37 UTC+05:30"
-    cache              : mutable dict loaded by load_cache(); updated in-place
-
-    Returns
-    -------
-    dict with keys: temp_c, humidity_pct, rain_mm, wind_kmh, weather_code
-    All values are None if data is unavailable.
-    """
-    empty: Dict[str, Optional[float]] = {
+) -> Dict:
+    empty = {
+        "weather_condition": None,
         "temp_c": None,
-        "humidity_pct": None,
-        "rain_mm": None,
-        "wind_kmh": None,
-        "weather_code": None,
+        "precipitation_mm": None,
     }
 
-    # Parse departure time
     try:
-        # "2026-04-14 19:00:37 UTC+05:30" -> "2026-04-14 19:00:37 +05:30"
         dt_str = departure_time_str.replace("UTC+05:30", "+05:30").replace("UTC+5:30", "+05:30")
         departure_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S %z")
     except Exception:
@@ -124,7 +95,6 @@ def get_weather_for_trip(
     date_str = departure_dt.strftime("%Y-%m-%d")
     hour = departure_dt.hour
 
-    # Fetch or retrieve from cache
     key = _cache_key(lat, lon, date_str)
     if key not in cache:
         hourly = _fetch_hourly(lat, lon, date_str)
@@ -137,37 +107,23 @@ def get_weather_for_trip(
     if not times:
         return empty
 
-    # Find index for the departure hour
-    # Open-Meteo time format: "2026-04-14T19:00"
     idx = None
     for i, t in enumerate(times):
         if len(t) >= 13 and t[11:13] == f"{hour:02d}":
             idx = i
             break
-
     if idx is None:
-        # Fall back to closest hour
-        min_diff = float("inf")
         idx = 0
-        for i, t in enumerate(times):
-            try:
-                t_hour = int(t[11:13])
-                diff = abs(t_hour - hour)
-                if diff < min_diff:
-                    min_diff = diff
-                    idx = i
-            except (ValueError, IndexError):
-                pass
 
-    def _get(field: str) -> Optional[float]:
+    def _get(field: str):
         vals = hourly.get(field, [])
-        val = vals[idx] if idx < len(vals) else None
-        return val  # may be None if API returned null
+        return vals[idx] if idx < len(vals) else None
+
+    wmo_code = _get("weather_code")
+    condition = WMO_CONDITIONS.get(wmo_code, "Unknown") if wmo_code is not None else None
 
     return {
+        "weather_condition": condition,
         "temp_c": _get("temperature_2m"),
-        "humidity_pct": _get("relative_humidity_2m"),
-        "rain_mm": _get("rain"),
-        "wind_kmh": _get("windspeed_10m"),
-        "weather_code": _get("weathercode"),
+        "precipitation_mm": _get("precipitation"),
     }
