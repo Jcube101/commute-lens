@@ -162,12 +162,16 @@ python main.py
 
 This will:
 1. Parse all GPX files in `data/gpx/` (malformed files are skipped with a warning)
-2. Classify and filter trips against your anchors
-3. Fetch Bluelink daily aggregates if credentials are configured (writes `outputs/bluelink_daily.csv`)
-4. Fetch weather for each trip from Open-Meteo (cached locally after first fetch)
-5. Join with your sheet data on date + direction
-6. Look up petrol price by date
-7. Write `outputs/master_trips.csv` with all fields
+2. Detect and truncate trailing walk segments on trips ending near anchors
+3. Classify and filter trips against your anchors
+4. Fetch Bluelink daily aggregates if credentials are configured (writes `outputs/bluelink_daily.csv`)
+5. Fetch weather for each trip from Open-Meteo (cached locally after first fetch)
+6. Join with your sheet data on date + direction
+7. Look up petrol price by date
+8. Write `outputs/master_trips.csv` with all fields
+9. Cluster routes by path similarity (DBSCAN, needs 5+ full trips per direction)
+10. Generate `outputs/heatmap.html` — speed-coloured map of all trips
+11. Generate `outputs/dashboard.html` — departure time analysis, trends, fuel costs
 
 Check the console output to verify trip classifications look correct. If trips are being discarded as "unrelated", check that your anchor coordinates and radius values are right.
 
@@ -200,5 +204,7 @@ The synthetic data includes realistic speed profiles with time-of-day variation,
 **OFFICE and MALL both matching the start point:** If your office and parking are very close (< 300m), the parser uses distance tie-breaking to pick the closer anchor. Reduce one radius if the wrong one keeps winning.
 
 **Stop detection flagging normal driving:** The 150m displacement guard usually prevents false positives, but on a very slow road (< 15 km/h) a traffic jam pause could get flagged. Increase `stop_min_minutes` in config.yaml if this happens.
+
+**Walk detection truncating too aggressively:** The 1 km distance cap should filter out slow traffic, but if your parking and office are more than 1 km apart, increase `WALK_MAX_DISTANCE_M` in `parser.py`. If you don't walk between parking and destination at all, you can set `WALK_MIN_DURATION_MINS` to a very high value to effectively disable it.
 
 **Weather fetch returning None:** Open-Meteo's forecast API covers ~92 days of history; the archive API handles older dates automatically. If both fail, weather fields will be empty for that trip — the pipeline continues without them.
