@@ -86,7 +86,7 @@ tripDrvTime (min), tripIdleTime (min), tripDist (km), tripAvgSpeed (km/h), tripM
 - Point interval: ~5-6 seconds — sufficient for junction-level bottleneck detection
 - Parser handles malformed GPX files gracefully (skips with warning)
 - Gap-based stop detection confirmed: 3 stops correctly detected (65.2, 51.3, 52.7 min)
-- Walk detection: trailing walk segments (< 7 km/h for > 3 min, < 1 km) auto-truncated from trips ending near OFFICE. Endpoint reclassified after truncation. Fields: walk_detected, walk_duration_mins
+- Walk detection: trailing walk segments (< 7 km/h for > 3 min, < 1 km) auto-truncated from trips ending near OFFICE or HOME. Endpoint reclassified after truncation. Fields: walk_detected, walk_duration_mins
 
 ### GPX file transfer method (manual, weekly)
 - Android 13+ blocks access to Android/data/ from Files app
@@ -200,7 +200,7 @@ Outbound and return legs are fully independent — missing one does not affect a
 ## Parser Logic (parser.py)
 
 ### Walk detection and truncation (runs before classification)
-When the raw endpoint is near OFFICE and the trailing segment shows sustained walking speed (< 7 km/h for > 3 min, < 1 km distance), the trip is truncated at the last point where vehicle speed exceeded 7 km/h. The truncated endpoint is then used for all classification, distance, and duration calculations. This catches the case where the user parks at the mall and walks to the office with OsmAnd still running. The 1 km distance cap prevents false positives from slow traffic crawl.
+When the raw endpoint is near OFFICE or HOME and the trailing segment shows sustained walking speed (< 7 km/h for > 3 min, < 1 km distance), the trip is truncated at the last point where vehicle speed exceeded 7 km/h. The truncated endpoint is then used for all classification, distance, and duration calculations. This catches the case where the user parks at the mall and walks to the office, or parks near home and walks the last stretch, with OsmAnd still running. The 1 km distance cap prevents false positives from slow traffic crawl.
 - walk_detected = True, walk_duration_mins recorded
 - Truncation happens before anchor matching, so parking label reflects the car's actual stop point
 
