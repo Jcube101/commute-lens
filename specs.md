@@ -172,7 +172,7 @@ All four conditions must hold simultaneously. Configurable via `thresholds.stop_
 
 ## Walk detection parameters
 
-Runs **before** trip classification. Detects trailing walk segments on trips whose raw endpoint is near OFFICE — handles the case where the user parks at the mall and walks to the office with OsmAnd still running.
+Runs **before** trip classification. Detects trailing walk segments on trips whose raw endpoint is near OFFICE or HOME — handles the case where the user parks and walks the last stretch with OsmAnd still running.
 
 | Parameter | Default | Meaning |
 |---|---|---|
@@ -180,7 +180,7 @@ Runs **before** trip classification. Detects trailing walk segments on trips who
 | `WALK_MIN_DURATION_MINS` | 3.0 | Minimum walk duration to trigger truncation |
 | `WALK_MAX_DISTANCE_M` | 1000.0 | Maximum walk distance — filters out slow traffic crawl |
 
-All three conditions must hold: speed below threshold, duration above minimum, distance below maximum. When triggered, the trip is truncated at the last point where vehicle speed exceeded 7 km/h. The truncated endpoint is used for classification (parking label), distance, and duration. Fields `walk_detected` and `walk_duration_mins` are recorded.
+All three conditions must hold: speed below threshold, duration above minimum, distance below maximum. The endpoint must be near OFFICE or HOME for detection to trigger. When triggered, the trip is truncated at the last point where vehicle speed exceeded 7 km/h. The truncated endpoint is used for classification (parking label), distance, and duration. Fields `walk_detected` and `walk_duration_mins` are recorded.
 
 ---
 

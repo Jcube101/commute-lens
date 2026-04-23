@@ -319,19 +319,17 @@ WALK_MAX_DISTANCE_M = 1000.0
 
 def detect_and_truncate_walk(
     points: List[TrackPoint],
-    office: Anchor,
+    *anchors: Anchor,
 ) -> Tuple[List[TrackPoint], bool, float]:
     """
     Detect a trailing walk segment at the end of a trip.
 
-    When the recorded endpoint is near OFFICE but the final segment shows
-    sustained walking speed (< 7 km/h for > 3 consecutive minutes over
-    < 1 km), the trip is truncated at the last point where vehicle speed
-    exceeded 7 km/h. This handles the case where the user parks at the
-    mall and walks to the office with OsmAnd still running.
+    When the recorded endpoint is near any of the given anchors (OFFICE
+    or HOME) and the final segment shows sustained walking speed (< 7 km/h
+    for > 3 consecutive minutes over < 1 km), the trip is truncated at the
+    last point where vehicle speed exceeded 7 km/h.
 
-    The 1 km distance cap distinguishes a mall-to-office walk (~250 m)
-    from slow traffic crawl which can also be below 7 km/h for minutes.
+    The 1 km distance cap distinguishes a short walk from slow traffic crawl.
 
     Returns:
       truncated_points  — points up to and including the truncation point
@@ -342,7 +340,7 @@ def detect_and_truncate_walk(
         return points, False, 0.0
 
     end = points[-1]
-    if not office.matches(end.lat, end.lon):
+    if not any(a.matches(end.lat, end.lon) for a in anchors):
         return points, False, 0.0
 
     # Scan backwards from the end to find the last point above walking speed
@@ -408,7 +406,7 @@ def classify_trip(
         return None
 
     # Walk detection: truncate trailing walk segment before classification
-    points, walk_detected, walk_duration_mins = detect_and_truncate_walk(points, office)
+    points, walk_detected, walk_duration_mins = detect_and_truncate_walk(points, office, home)
 
     start, end = points[0], points[-1]
 
