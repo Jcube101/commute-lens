@@ -42,6 +42,8 @@ CSV_FIELDS = [
     "stop_duration_mins",
     "adjusted_duration_mins",
     "point_count",
+    "walk_detected",
+    "walk_duration_mins",
 ]
 
 
@@ -307,6 +309,77 @@ def detect_stops(
 
 
 # ---------------------------------------------------------------------------
+# Walk detection and truncation
+# ---------------------------------------------------------------------------
+
+WALK_SPEED_THRESHOLD_KMH = 7.0
+WALK_MIN_DURATION_MINS = 3.0
+WALK_MAX_DISTANCE_M = 1000.0
+
+
+def detect_and_truncate_walk(
+    points: List[TrackPoint],
+    office: Anchor,
+) -> Tuple[List[TrackPoint], bool, float]:
+    """
+    Detect a trailing walk segment at the end of a trip.
+
+    When the recorded endpoint is near OFFICE but the final segment shows
+    sustained walking speed (< 7 km/h for > 3 consecutive minutes over
+    < 1 km), the trip is truncated at the last point where vehicle speed
+    exceeded 7 km/h. This handles the case where the user parks at the
+    mall and walks to the office with OsmAnd still running.
+
+    The 1 km distance cap distinguishes a mall-to-office walk (~250 m)
+    from slow traffic crawl which can also be below 7 km/h for minutes.
+
+    Returns:
+      truncated_points  — points up to and including the truncation point
+      walk_detected     — True if a walk segment was found and truncated
+      walk_duration_mins — duration of the removed walk segment
+    """
+    if len(points) < 10:
+        return points, False, 0.0
+
+    end = points[-1]
+    if not office.matches(end.lat, end.lon):
+        return points, False, 0.0
+
+    # Scan backwards from the end to find the last point above walking speed
+    last_vehicle_idx = len(points) - 1
+    for i in range(len(points) - 1, -1, -1):
+        speed = points[i].speed_kmh
+        if speed is not None and speed > WALK_SPEED_THRESHOLD_KMH:
+            last_vehicle_idx = i
+            break
+
+    if last_vehicle_idx >= len(points) - 2:
+        return points, False, 0.0
+
+    walk_start_time = points[last_vehicle_idx + 1].time
+    walk_end_time = points[-1].time
+    walk_duration = (walk_end_time - walk_start_time).total_seconds() / 60.0
+
+    if walk_duration < WALK_MIN_DURATION_MINS:
+        return points, False, 0.0
+
+    walk_points = points[last_vehicle_idx + 1:]
+    walk_dist = sum(
+        haversine(walk_points[i].lat, walk_points[i].lon,
+                  walk_points[i + 1].lat, walk_points[i + 1].lon)
+        for i in range(len(walk_points) - 1)
+    )
+    if walk_dist > WALK_MAX_DISTANCE_M:
+        return points, False, 0.0
+
+    truncated = points[: last_vehicle_idx + 1]
+    if len(truncated) < 10:
+        return points, False, 0.0
+
+    return truncated, True, round(walk_duration, 1)
+
+
+# ---------------------------------------------------------------------------
 # Trip classification
 # ---------------------------------------------------------------------------
 
@@ -333,6 +406,9 @@ def classify_trip(
     """
     if len(points) < min_points:
         return None
+
+    # Walk detection: truncate trailing walk segment before classification
+    points, walk_detected, walk_duration_mins = detect_and_truncate_walk(points, office)
 
     start, end = points[0], points[-1]
 
@@ -410,6 +486,8 @@ def classify_trip(
         "stop_duration_mins": stop_duration_mins,
         "adjusted_duration_mins": adjusted_duration_mins,
         "point_count": len(points),
+        "walk_detected": walk_detected,
+        "walk_duration_mins": walk_duration_mins,
         "points": points,  # retained in memory for heatmap; excluded from CSV
     }
 

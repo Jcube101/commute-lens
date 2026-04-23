@@ -102,7 +102,12 @@ def generate_heatmap(csv_path: str, gpx_dir: str, output_path: str) -> None:
     center_lat = sum(all_lats) / len(all_lats)
     center_lon = sum(all_lons) / len(all_lons)
 
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap")
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=12,
+        tiles="https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png",
+        attr="&copy; OpenStreetMap contributors &copy; CartoDB",
+    )
 
     for points in all_tracks:
         for i in range(1, len(points)):
