@@ -86,6 +86,7 @@ tripDrvTime (min), tripIdleTime (min), tripDist (km), tripAvgSpeed (km/h), tripM
 - Point interval: ~5-6 seconds — sufficient for junction-level bottleneck detection
 - Parser handles malformed GPX files gracefully (skips with warning)
 - Gap-based stop detection confirmed: 3 stops correctly detected (65.2, 51.3, 52.7 min)
+- Walk detection: trailing walk segments (< 7 km/h for > 3 min, < 1 km) auto-truncated from trips ending near OFFICE. Endpoint reclassified after truncation. Fields: walk_detected, walk_duration_mins
 
 ### GPX file transfer method (manual, weekly)
 - Android 13+ blocks access to Android/data/ from Files app
@@ -140,7 +141,7 @@ commute-lens/
     heatmap.html             <- speed-coloured map of road segments
     dashboard.html           <- summary charts and trends
   src/
-    parser.py                <- GPX ingestion, trip classifier, merger, stop detection, haversine
+    parser.py                <- GPX ingestion, trip classifier, merger, stop detection, walk detection, haversine
     bluelink.py              <- Bluelink daily aggregate fetcher, upserts to outputs/bluelink_daily.csv
     weather.py               <- Open-Meteo fetch by lat/lon/datetime with local cache
     cluster.py               <- DBSCAN route clustering by path similarity, Nominatim labels
@@ -191,11 +192,17 @@ Outbound and return legs are fully independent — missing one does not affect a
 | Shooting range / football (>30 min) | PAUSE, resume after | Normal | Stop detected, duration adjusted |
 | Forgot to pause (kept recording) | — | Normal | Gap analysis detects stop, adjusts |
 | Only one leg recorded | Record that leg | 1 row | That leg processed independently |
+| Walked to office after parking at mall | Keep recording | Normal | Walk detected, trip truncated at last vehicle speed point |
 | WFH day | No recording | No entry | Nothing to process |
 
 ---
 
 ## Parser Logic (parser.py)
+
+### Walk detection and truncation (runs before classification)
+When the raw endpoint is near OFFICE and the trailing segment shows sustained walking speed (< 7 km/h for > 3 min, < 1 km distance), the trip is truncated at the last point where vehicle speed exceeded 7 km/h. The truncated endpoint is then used for all classification, distance, and duration calculations. This catches the case where the user parks at the mall and walks to the office with OsmAnd still running. The 1 km distance cap prevents false positives from slow traffic crawl.
+- walk_detected = True, walk_duration_mins recorded
+- Truncation happens before anchor matching, so parking label reflects the car's actual stop point
 
 ### Trip classification
 - Valid outbound  : start ~= HOME and end ~= OFFICE or MALL

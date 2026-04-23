@@ -38,7 +38,9 @@ One row per classified trip. All fields are strings in the CSV.
 | `stop_detected` | bool | Gap detector | True if at least one mid-trip stop was flagged |
 | `stop_duration_mins` | float | Gap detector | Sum of all detected stop durations |
 | `adjusted_duration_mins` | float | duration - stop | Driving time net of detected stops |
-| `point_count` | int | GPX parse | Number of track points in the trip |
+| `point_count` | int | GPX parse | Number of track points in the trip (after walk truncation if applicable) |
+| `walk_detected` | bool | Walk detector | True if a trailing walk segment was truncated |
+| `walk_duration_mins` | float | Walk detector | Duration of the removed walk segment |
 
 ### Enrichment fields (added by main.py)
 
@@ -165,6 +167,20 @@ no anchor match at either end                  -> discard (None returned)
 | anchor exclusion | — | Midpoint must not be within any anchor radius |
 
 All four conditions must hold simultaneously. Configurable via `thresholds.stop_min_minutes` in config.yaml.
+
+---
+
+## Walk detection parameters
+
+Runs **before** trip classification. Detects trailing walk segments on trips whose raw endpoint is near OFFICE — handles the case where the user parks at the mall and walks to the office with OsmAnd still running.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `WALK_SPEED_THRESHOLD_KMH` | 7.0 | Maximum speed to classify as walking |
+| `WALK_MIN_DURATION_MINS` | 3.0 | Minimum walk duration to trigger truncation |
+| `WALK_MAX_DISTANCE_M` | 1000.0 | Maximum walk distance — filters out slow traffic crawl |
+
+All three conditions must hold: speed below threshold, duration above minimum, distance below maximum. When triggered, the trip is truncated at the last point where vehicle speed exceeded 7 km/h. The truncated endpoint is used for classification (parking label), distance, and duration. Fields `walk_detected` and `walk_duration_mins` are recorded.
 
 ---
 
