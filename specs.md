@@ -54,6 +54,7 @@ One row per classified trip. All fields are strings in the CSV.
 | `weather_condition` | str | Open-Meteo | Clear / Cloudy / Rain / Heavy Rain (from WMO code) |
 | `temp_c` | float | Open-Meteo | Temperature at departure hour (°C) |
 | `precipitation_mm` | float | Open-Meteo | Precipitation at departure hour (mm) |
+| `route_cluster` | str | cluster.py | DBSCAN route label (e.g. "Via Outer Ring Rd") or "Unclustered — insufficient data" |
 
 ---
 
@@ -118,6 +119,9 @@ bluelink:
 11. **Enrich all rows** — for each row in `master_trips.csv`, fill missing enrichment fields. Weather fetched from OFFICE coordinates using forecast API (recent) or archive API (>90 days)
 12. **Save weather cache** — write updated cache back to disk
 13. **Write master_trips.csv** — overwrite with full enriched field set
+14. **Route clustering** — DBSCAN on point-to-point track distances, separate for outbound/return. Labels via Nominatim reverse geocoding. Adds `route_cluster` column to `master_trips.csv`. Skips directions with <5 full trips
+15. **Generate heatmap** — Folium speed-coloured map of all trips (including partials). Output: `outputs/heatmap.html`
+16. **Generate dashboard** — Plotly charts (departure vs duration, day-of-week, trends, mileage, parking). Output: `outputs/dashboard.html`
 
 ---
 
@@ -249,6 +253,8 @@ Add a new row each time the pump price changes. Do not modify existing rows.
 | `outputs/processed.json` | No | Incremental processing state |
 | `outputs/weather_cache.json` | No | Cached Open-Meteo responses |
 | `outputs/bluelink_daily.csv` | No | Bluelink daily trip aggregates |
+| `outputs/heatmap.html` | No | Folium speed-coloured commute map |
+| `outputs/dashboard.html` | No | Plotly analytics dashboard |
 | `data/reference/petrol_prices.csv` | Yes | Fuel price reference (no personal data) |
 | `data/demo/` | Yes | Synthetic commuter data for portfolio demo |
 | `config.example.yaml` | Yes | Placeholder template |

@@ -42,15 +42,15 @@
 
 ---
 
-## Phase 3 — Outputs (needs ~10+ real commute trips)
+## Phase 3 — Outputs (complete)
 
 **Goal:** Turn structured data into useful visuals.
 
-- [ ] `cluster.py` — path similarity clustering, assign descriptive route labels (e.g. "Via ORR")
-  - Route labels added to `master_trips.csv` once clustering is stable
-- [ ] `heatmap.html` — Folium map, road segments coloured green to red by speed, anonymised (no home/office markers)
-- [ ] `dashboard.html` — departure time bucket analysis, route comparison, weekly fuel trends
-- [ ] `analysis.py` — script that reads `master_trips.csv` and generates both HTML outputs
+- [x] `cluster.py` — DBSCAN path similarity clustering (separate for outbound/return), descriptive route labels via Nominatim reverse geocoding (e.g. "Via Outer Ring Rd"). Requires 5+ full trips per direction; currently labelling all trips as "Unclustered — insufficient data" (2 full outbound, 3 full return). `route_cluster` column added to `master_trips.csv`
+- [x] `heatmap.html` — Folium map with OpenStreetMap tiles. All trips plotted (including partials). Speed-coloured segments: green >30 km/h, yellow 15–30, orange 5–15, red <5. Line thickness scaled by trip coverage. No home/office markers. Legend and title overlay
+- [x] `dashboard.html` — Plotly self-contained HTML. Full trips only for stats (sample size noted on each chart). Charts: departure time vs duration scatter (outbound/return series), day-of-week avg duration bar (outbound), duration over time line, mileage over time line, parking distribution pie. #e85d04 orange accent, dark theme
+- [x] `analysis.py` — generates both `heatmap.html` and `dashboard.html` from `master_trips.csv` and GPX files. Called by `main.py` as pipeline steps 6–7
+- [x] Pipeline updated to 7 steps: parse → Bluelink → sheet → petrol → enrich → cluster → visualise
 
 ---
 

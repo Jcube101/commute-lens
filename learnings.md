@@ -142,6 +142,30 @@ With a paused recording, the gap between the last pre-stop point and the first p
 
 ---
 
+## Route clustering needs a minimum trip count to be meaningful
+
+**What I built:** DBSCAN clustering on symmetric point-to-point track distances, with a minimum threshold of 5 full (non-partial) trips per direction before clustering runs.
+
+**Why the threshold:** With fewer than 5 trips, DBSCAN either puts everything in one cluster (useless) or marks everything as noise. The distance metric — average nearest-point distance between subsampled tracks — is sensitive to GPS drift on similar routes, so a small sample size produces unreliable clusters. With 5+ trips, repeated patterns emerge and DBSCAN's density-based grouping works correctly.
+
+**Why separate outbound and return:** The same commuter may take different routes in different directions (e.g. outbound via ORR to avoid a U-turn, return via a direct road). Mixing directions would create false clusters based on direction rather than route choice.
+
+**Label generation:** Each cluster's distinctive segment (the point most distant from all other clusters) is reverse geocoded via Nominatim to produce labels like "Via Outer Ring Rd". This is more useful than "Cluster 0" but depends on Nominatim returning a meaningful road name — coordinates without nearby named roads fall back to lat/lon display.
+
+---
+
+## Folium segment rendering for speed heatmaps
+
+**What I built:** Each consecutive pair of GPS points is rendered as a coloured polyline segment on a Folium map. Colour encodes speed; line weight encodes how many trips covered that road segment.
+
+**Why per-segment, not per-point:** A point-based heatmap (Folium's HeatMap plugin) shows density, not speed. For commute analysis, the useful information is *where* the car is slow, not *where* GPS points are dense. Per-segment colouring with speed thresholds (green >30, yellow 15-30, orange 5-15, red <5 km/h) directly shows bottleneck locations.
+
+**Coverage-weighted thickness:** A road segment driven once has low confidence — the speed might be an outlier. A segment driven 10 times is a reliable signal. Line thickness scaled by trip coverage communicates this visually without requiring the user to think about sample sizes.
+
+**Gap filtering:** Segments where consecutive points are >500m apart are skipped. These occur at recording gaps (pause/resume, OsmAnd auto-split boundaries) and would draw misleading straight lines across the map.
+
+---
+
 ## Bluelink API does not provide per-trip mileage for India
 
 **What I tested:** `hyundai_kia_connect_api` v4.10.3 with region=6 (India), brand=2 (Hyundai), against a Hyundai Exter AMT registered Dec 2024.
