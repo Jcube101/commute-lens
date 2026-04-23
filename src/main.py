@@ -37,6 +37,7 @@ from parser import (  # noqa: E402
     write_csv_incremental,
 )
 from bluelink import fetch_bluelink_daily  # noqa: E402
+from cluster import run_clustering  # noqa: E402
 from weather import get_weather_for_trip, load_cache, save_cache  # noqa: E402
 
 
@@ -56,6 +57,7 @@ ENRICHMENT_FIELDS = [
     "weather_condition",  # Open-Meteo: Clear / Cloudy / Rain / Heavy Rain
     "temp_c",             # Open-Meteo temperature at departure
     "precipitation_mm",   # Open-Meteo precipitation at departure hour
+    "route_cluster",      # from cluster.py — DBSCAN path similarity label
 ]
 
 ALL_FIELDS = CSV_FIELDS + ENRICHMENT_FIELDS
@@ -302,7 +304,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     # Step 1: Run parser incrementally
     # ------------------------------------------------------------------
-    print("\n[1/5] Running GPX parser...")
+    print("\n[1/7] Running GPX parser...")
     processed_files = load_processed(str(processed_json))
     all_gpx = {p.name for p in Path(gpx_dir).glob("*.gpx")}
     new_files = all_gpx - processed_files
@@ -324,7 +326,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     # Step 2: Fetch Bluelink daily aggregates
     # ------------------------------------------------------------------
-    print("\n[2/5] Fetching Bluelink daily aggregates...")
+    print("\n[2/7] Fetching Bluelink daily aggregates...")
     bluelink_csv = outputs_dir / "bluelink_daily.csv"
     result = fetch_bluelink_daily(cfg, str(bluelink_csv))
     if result is None:
@@ -337,7 +339,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     # Step 3: Fetch sheet data
     # ------------------------------------------------------------------
-    print("\n[3/5] Fetching sheet data...")
+    print("\n[3/7] Fetching sheet data...")
     if sheet_csv_url:
         sheet_rows = load_sheet_csv(sheet_csv_url)
         sheet_index = build_sheet_index(sheet_rows)
@@ -349,14 +351,14 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     # Step 4: Load petrol prices
     # ------------------------------------------------------------------
-    print("\n[4/5] Loading petrol prices...")
+    print("\n[4/7] Loading petrol prices...")
     petrol_prices = load_petrol_prices(str(petrol_prices_path))
     print(f"  {len(petrol_prices)} price period(s) loaded.")
 
     # ------------------------------------------------------------------
     # Step 5: Enrich all trips
     # ------------------------------------------------------------------
-    print("\n[5/5] Enriching trips with weather, sheet, and petrol data...")
+    print("\n[5/7] Enriching trips with weather, sheet, and petrol data...")
     weather_cache = load_cache(str(weather_cache_path))
     all_rows = read_master_csv(str(output_csv))
 
@@ -375,4 +377,28 @@ if __name__ == "__main__":
     write_master_csv(enriched, str(output_csv))
 
     print(f"  {len(enriched)} trip(s) written to {output_csv}")
+
+    # ------------------------------------------------------------------
+    # Step 6: Route clustering
+    # ------------------------------------------------------------------
+    print("\n[6/7] Clustering routes...")
+    gpx_dir_str = str(gpx_dir)
+    summary = run_clustering(str(output_csv), gpx_dir_str)
+    print(summary)
+
+    # ------------------------------------------------------------------
+    # Step 7: Generate heatmap and dashboard
+    # ------------------------------------------------------------------
+    print("[7/7] Generating heatmap and dashboard...")
+    from analysis import generate_heatmap, generate_dashboard  # noqa: E402
+
+    heatmap_path = str(outputs_dir / "heatmap.html")
+    dashboard_path = str(outputs_dir / "dashboard.html")
+
+    generate_heatmap(str(output_csv), gpx_dir_str, heatmap_path)
+    print(f"  Heatmap -> {heatmap_path}")
+
+    generate_dashboard(str(output_csv), dashboard_path)
+    print(f"  Dashboard -> {dashboard_path}")
+
     print("\nDone.")

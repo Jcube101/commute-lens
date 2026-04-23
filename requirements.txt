@@ -5,9 +5,8 @@ pyyaml>=6.0
 requests>=2.31
 hyundai-kia-connect-api>=4.10
 
-# Phase 3 — outputs (heatmap, dashboard)
-# pandas
-# folium
-
-# Phase 4 — clustering (route similarity labels)
-# scikit-learn
+# Phase 3 — outputs (heatmap, dashboard, clustering)
+folium>=0.20
+plotly>=6.0
+numpy>=1.24
+scikit-learn>=1.3

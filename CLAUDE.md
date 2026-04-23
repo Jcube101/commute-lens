@@ -143,8 +143,8 @@ commute-lens/
     parser.py                <- GPX ingestion, trip classifier, merger, stop detection, haversine
     bluelink.py              <- Bluelink daily aggregate fetcher, upserts to outputs/bluelink_daily.csv
     weather.py               <- Open-Meteo fetch by lat/lon/datetime with local cache
-    cluster.py               <- route clustering by path similarity, descriptive labels
-    analysis.py              <- heatmap and dashboard generation
+    cluster.py               <- DBSCAN route clustering by path similarity, Nominatim labels
+    analysis.py              <- generate_heatmap() and generate_dashboard()
     generate_demo.py         <- generates synthetic GPX files for portfolio demo mode
     main.py                  <- "Go" button. Run: python main.py
   data/demo/                 <- synthetic commuter data for portfolio (committed to GitHub)
@@ -223,14 +223,13 @@ outputs/processed.json tracks processed filenames. Each run only processes new f
 1. Check for new GPX files not in processed.json
 2. Parse new files: classify, merge, extract, detect stops
 3. Fetch Bluelink daily aggregates (last 4 months) → upsert to outputs/bluelink_daily.csv (silent on failure)
-4. Fetch weather from Open-Meteo (use cache if already fetched for that date/location)
-5. Fetch sidecar sheet CSV fresh from sheet_csv_url in config.yaml
-6. Join on date + direction
-7. Look up petrol price by date range from petrol_prices.csv
-8. Calculate fuel cost
-9. Cluster all trips by path similarity -> descriptive route labels
-10. Append to master_trips.csv
-11. Regenerate heatmap.html and dashboard.html
+4. Fetch sidecar sheet CSV fresh from sheet_csv_url in config.yaml
+5. Look up petrol price by date range from petrol_prices.csv
+6. Enrich all trips: weather (Open-Meteo, cached), sheet join, petrol price, fuel cost, derived fields
+7. Write enriched master_trips.csv
+8. Cluster all trips by path similarity (DBSCAN, per direction) → add route_cluster column
+9. Generate heatmap.html — Folium speed-coloured map of all trips
+10. Generate dashboard.html — Plotly charts (departure vs duration, trends, mileage, parking)
 
 ---
 
@@ -257,12 +256,15 @@ outputs/processed.json tracks processed filenames. Each run only processes new f
 - [x] All markdown files created: README, CLAUDE, learnings, specs, roadmap, CONTRIBUTING
 - [x] All changes committed and pushed to GitHub
 
-### To Do
+### Done (Phase 3)
+- [x] cluster.py — DBSCAN path similarity clustering (outbound/return separate), Nominatim labels, 5-trip minimum per direction, route_cluster column in master_trips.csv
+- [x] analysis.py — generate_heatmap() and generate_dashboard(), called by main.py steps 6-7
+- [x] heatmap.html — Folium + OSM tiles, speed-coloured segments (green/yellow/orange/red), coverage-weighted thickness, no anchor markers, legend
+- [x] dashboard.html — Plotly self-contained HTML, 5 charts (departure vs duration, day-of-week, duration trend, mileage trend, parking pie), #e85d04 orange + dark theme
+- [x] Pipeline expanded to 7 steps: parse → Bluelink → sheet → petrol → enrich → cluster → visualise
+- [x] Dependencies: numpy, scikit-learn, folium, plotly added to requirements.txt
 
-#### Phase 3 — Output (needs ~10+ real commute trips)
-- [ ] cluster.py — path similarity clustering, descriptive label generation
-- [ ] heatmap.html — folium map, speed coloured green->red per segment, anonymised (no home/office markers)
-- [ ] dashboard.html — departure bucket analysis, route comparison, weekly trends, fuel cost
+### To Do
 
 #### Phase 4 — Demo mode and portfolio (after ~40 real trips)
 - [ ] generate_demo.py — synthetic GPX generator using OSRM road geometry for 4 fictional Bengaluru commuters:
