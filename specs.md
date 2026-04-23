@@ -11,6 +11,8 @@
 | Open-Meteo API | Hourly weather (condition, temp, precipitation) | HTTP GET, forecast + archive APIs, cached in `outputs/weather_cache.json` |
 | Hyundai Bluelink API | Daily trip aggregates (distance, drive/idle time, speed) | `hyundai_kia_connect_api` v4.10.3, region=6 (India), cached in `outputs/bluelink_daily.csv` |
 | `petrol_prices.csv` | Petrol price by date range | Read from `data/reference/petrol_prices.csv` |
+| Nominatim (OpenStreetMap) | Reverse geocoding for cluster labels | HTTP GET, free, 1 req/sec rate limit. Used by `cluster.py` |
+| CartoDB Positron tiles | Map tiles for heatmap | Tile URL in `analysis.py`. Free, no key, no referer required |
 | OSRM (router.project-osrm.org) | Road geometry for synthetic demo routes | HTTP GET, free, no API key. Used only by `generate_demo.py` |
 | OpenFreeMap tiles | Map tiles for portfolio frontend | Tile URL in frontend config. Free, no key |
 
@@ -111,8 +113,9 @@ bluelink:
 1. **Load config** — read `config.yaml`, build Anchor objects for HOME, OFFICE, MALL
 2. **Incremental GPX parse** — compare `data/gpx/*.gpx` against `outputs/processed.json`; parse only new files. Malformed GPX files are skipped with a warning
 3. **Merge consecutive groups** — files with inter-file gap < 30 min are merged before classification
-4. **Classify trips** — each group classified against anchor pairs; see classification rules below
-5. **Detect stops** — gap-based stop detector run on each classified trip
+4. **Walk detection** — if raw endpoint is near OFFICE or HOME, scan for trailing walk segment (< 7 km/h, > 3 min, < 1 km). Truncate before classification
+5. **Classify trips** — each group classified against anchor pairs; see classification rules below
+6. **Detect stops** — gap-based stop detector run on each classified trip
 6. **Write parser output** — append new rows to `master_trips.csv`; remove superseded rows on re-merge
 7. **Fetch Bluelink daily aggregates** — last 4 months of daily trip stats via `_get_trip_info()`, upserted to `outputs/bluelink_daily.csv`. Silent on failure
 8. **Fetch sheet CSV** — `requests.get(sheet_csv_url)` on every run; parse and index by (date, direction)

@@ -80,7 +80,7 @@ tripDrvTime (min), tripIdleTime (min), tripDist (km), tripAvgSpeed (km/h), tripM
 - **Kept recording through a long stop by mistake**: parser detects via gap analysis and subtracts stop duration. Both raw and adjusted duration recorded
 
 ### GPX data confirmed working
-- Tested with 17 real GPX files (12 classified trips, 3 discarded non-commute, 1 malformed skipped, 1 merged pair)
+- Tested with 19 real GPX files (14 classified trips, 3 discarded non-commute, 1 malformed skipped, 1 merged pair)
 - OsmAnd logs: lat/lon, timestamp, elevation, speed (m/s), HDOP at every point
 - Speed stored under OsmAnd namespace: https://osmand.net/docs/technical/osmand-file-formats/osmand-gpx
 - Point interval: ~5-6 seconds — sufficient for junction-level bottleneck detection
@@ -258,15 +258,16 @@ outputs/processed.json tracks processed filenames. Each run only processes new f
 - [x] Google Sheet CSV fetch in main.py
 - [x] Petrol price lookup from petrol_prices.csv
 - [x] Parser resilient to malformed GPX files (skips with warning)
-- [x] Join pipeline verified end-to-end — 17 GPX files, 12 trips, 10 sheet rows, weather + Bluelink all populated
+- [x] Join pipeline verified end-to-end — 19 GPX files, 14 trips, 12 sheet rows, weather + Bluelink all populated
 - [x] requirements.txt created
 - [x] All markdown files created: README, CLAUDE, learnings, specs, roadmap, CONTRIBUTING
 - [x] All changes committed and pushed to GitHub
+- [x] Walk detection: trailing walk segments auto-truncated from trips ending near OFFICE or HOME (< 7 km/h, > 3 min, < 1 km). 3 walks detected across 14 trips (all office-end, 0 home-end)
 
 ### Done (Phase 3)
 - [x] cluster.py — DBSCAN path similarity clustering (outbound/return separate), Nominatim labels, 5-trip minimum per direction, route_cluster column in master_trips.csv
 - [x] analysis.py — generate_heatmap() and generate_dashboard(), called by main.py steps 6-7
-- [x] heatmap.html — Folium + OSM tiles, speed-coloured segments (green/yellow/orange/red), coverage-weighted thickness, no anchor markers, legend
+- [x] heatmap.html — Folium + CartoDB Positron tiles (file:// compatible), speed-coloured segments (green/yellow/orange/red), coverage-weighted thickness, no anchor markers, legend
 - [x] dashboard.html — Plotly self-contained HTML, 5 charts (departure vs duration, day-of-week, duration trend, mileage trend, parking pie), #e85d04 orange + dark theme
 - [x] Pipeline expanded to 7 steps: parse → Bluelink → sheet → petrol → enrich → cluster → visualise
 - [x] Dependencies: numpy, scikit-learn, folium, plotly added to requirements.txt

@@ -27,7 +27,7 @@ It is designed around a real commute with unusual geometry: three anchor points 
 OsmAnd GPX files
       |
       v
-  parser.py          — classify trips, detect stops, extract GPS metrics
+  parser.py          — classify trips, detect stops & walks, extract GPS metrics
       |
       v
   bluelink.py        — Hyundai Bluelink daily trip aggregates (optional)
@@ -45,7 +45,10 @@ OsmAnd GPX files
   master_trips.csv   ��� enriched, one row per trip
       |
       v
-  heatmap + dashboard
+  cluster.py         — DBSCAN route clustering, labels via Nominatim
+      |
+      v
+  analysis.py        — speed heatmap (Folium) + dashboard (Plotly)
 ```
 
 Run the whole pipeline with one command:
@@ -70,6 +73,10 @@ The parser classifies each GPX file (or merged group) against three anchor coord
 | No anchor match | Discarded silently |
 
 Consecutive GPX files with a gap under 30 minutes are merged before classification, handling OsmAnd auto-splits at petrol bunks.
+
+### Walk detection
+
+When a trip's recorded endpoint is near OFFICE or HOME and the final segment shows sustained walking speed (< 7 km/h for > 3 minutes over < 1 km), the parser truncates the trip at the last point where vehicle speed exceeded 7 km/h. This handles the common case of parking at the mall and walking to the office with OsmAnd still recording. The truncated endpoint is used for all classification, distance, and duration calculations. The 1 km distance cap filters out slow traffic crawl that would otherwise trigger false positives.
 
 ### Mid-trip stop detection
 
@@ -163,8 +170,8 @@ The interactive explorer lets you select a profile, toggle departure window and 
 ## Roadmap
 
 - **Phase 1** (complete): GPX parser, incremental processing, stop detection
-- **Phase 2** (complete): Weather enrichment, sheet join, petrol price, Bluelink daily aggregates, full pipeline
-- **Phase 3**: Speed heatmap, departure time dashboard, fuel cost trends
+- **Phase 2** (complete): Weather enrichment, sheet join, petrol price, Bluelink daily aggregates, walk detection, full pipeline
+- **Phase 3** (complete): Route clustering (DBSCAN), speed heatmap (Folium + CartoDB Positron), analytics dashboard (Plotly)
 - **Phase 4**: Synthetic demo mode (OSRM + MapLibre GL JS), interactive portfolio frontend
 - **Phase 5**: Junction bottleneck ranking, day-of-week variance, seasonal patterns
 - **Phase 6**: Predictive departure model, commute cost calculator, city-level traffic intelligence

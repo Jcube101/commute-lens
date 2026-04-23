@@ -166,6 +166,26 @@ With a paused recording, the gap between the last pre-stop point and the first p
 
 ---
 
+## Walk detection needs a distance cap to avoid false positives from slow traffic
+
+**What I built:** Walk detection scans backwards from the trip endpoint for sustained speed below 7 km/h. When found (> 3 minutes), it truncates the trip at the last point where vehicle speed exceeded 7 km/h.
+
+**What broke:** The April 23 outbound trip was flagged with a 34-minute "walk" — clearly not walking. Bengaluru traffic regularly crawls below 7 km/h for extended periods near the office, and the speed-only check could not distinguish this from an actual walk.
+
+**Fix:** Added a 1 km maximum walk distance cap. A mall-to-office walk is ~250 m; anything over 1 km is traffic crawl. After adding the guard: 3 legitimate walks remain (4–8 min each, 200–750 m), the 34-minute false positive is correctly rejected.
+
+**Why the distance cap works better than a duration cap:** Duration alone would require tuning — a 10-minute walk is plausible at a large campus but 34 minutes is not. Distance is a stronger signal because a walk between two nearby locations has a hard physical upper bound regardless of walking speed or pauses. The mall and office are ~250 m apart, so 1 km is generous enough for GPS drift without accepting multi-km traffic crawl.
+
+---
+
+## OpenStreetMap tiles require a referer header — use CartoDB Positron for local files
+
+**What broke:** `heatmap.html` showed "Access blocked — Referer required" when opened as a local `file://` URL. OpenStreetMap's tile servers require a valid HTTP Referer header, which browsers do not send for `file://` origins.
+
+**Fix:** Switched from `tiles="OpenStreetMap"` to CartoDB Positron tiles (`https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png`), which serve tiles without a referer requirement. The light/neutral style also works better as a background for speed-coloured overlays.
+
+---
+
 ## Bluelink API does not provide per-trip mileage for India
 
 **What I tested:** `hyundai_kia_connect_api` v4.10.3 with region=6 (India), brand=2 (Hyundai), against a Hyundai Exter AMT registered Dec 2024.

@@ -29,8 +29,8 @@
 - [x] `petrol_prices.csv` seeded
 - [x] `sheet_csv_url` added to `config.yaml` — sheet fetched fresh on every run
 - [x] Parser resilient to malformed GPX files (skips with warning instead of crashing)
-- [x] Verify end-to-end: `python main.py` tested with 17 GPX files (12 classified trips, 3 discarded, 1 malformed skipped), 10 sheet rows, weather for all dates, Bluelink 87 daily records
-- [x] 12 classified trips (4 full + 8 partial) with full data — ready for Phase 3
+- [x] Verify end-to-end: `python main.py` tested with 19 GPX files (14 classified trips, 3 discarded, 1 malformed skipped), 12 sheet rows, weather for all dates, Bluelink 87 daily records
+- [x] 14 classified trips (5 full + 9 partial) with full data — ready for Phase 3
 
 ### Bluelink API findings (2026-04-21)
 
@@ -47,10 +47,12 @@
 **Goal:** Turn structured data into useful visuals.
 
 - [x] `cluster.py` — DBSCAN path similarity clustering (separate for outbound/return), descriptive route labels via Nominatim reverse geocoding (e.g. "Via Outer Ring Rd"). Requires 5+ full trips per direction; currently labelling all trips as "Unclustered — insufficient data" (2 full outbound, 3 full return). `route_cluster` column added to `master_trips.csv`
-- [x] `heatmap.html` — Folium map with OpenStreetMap tiles. All trips plotted (including partials). Speed-coloured segments: green >30 km/h, yellow 15–30, orange 5–15, red <5. Line thickness scaled by trip coverage. No home/office markers. Legend and title overlay
+- [x] `heatmap.html` — Folium map with CartoDB Positron tiles (file:// compatible — OSM requires referer header). All trips plotted (including partials). Speed-coloured segments: green >30 km/h, yellow 15–30, orange 5–15, red <5. Line thickness scaled by trip coverage. No home/office markers. Legend and title overlay
 - [x] `dashboard.html` — Plotly self-contained HTML. Full trips only for stats (sample size noted on each chart). Charts: departure time vs duration scatter (outbound/return series), day-of-week avg duration bar (outbound), duration over time line, mileage over time line, parking distribution pie. #e85d04 orange accent, dark theme
 - [x] `analysis.py` — generates both `heatmap.html` and `dashboard.html` from `master_trips.csv` and GPX files. Called by `main.py` as pipeline steps 6–7
 - [x] Pipeline updated to 7 steps: parse → Bluelink → sheet → petrol → enrich → cluster → visualise
+- [x] Walk detection: trailing walk segments (< 7 km/h, > 3 min, < 1 km) auto-truncated from trips ending near OFFICE or HOME. Truncated endpoint used for classification. 3 walks detected across 14 trips
+- [x] `parser.py` updated with `walk_detected` and `walk_duration_mins` fields in `master_trips.csv`
 
 ---
 
