@@ -166,14 +166,21 @@ def parse_gpx(filepath: str) -> List[TrackPoint]:
 
 def load_and_sort_gpx_files(
     gpx_dir: str,
+    malformed_files: Optional[Set[str]] = None,
 ) -> List[Tuple[str, List[TrackPoint]]]:
-    """Parse all GPX files in gpx_dir and return them sorted by first timestamp."""
+    """Parse all GPX files in gpx_dir and return them sorted by first timestamp.
+
+    Any file that fails XML parsing is added to malformed_files (if provided)
+    so the caller can mark it as processed and avoid retrying on future runs.
+    """
     results: List[Tuple[str, List[TrackPoint]]] = []
     for gpx_file in sorted(Path(gpx_dir).glob("*.gpx")):
         try:
             points = parse_gpx(str(gpx_file))
         except ET.ParseError as exc:
             print(f"  WARNING: skipping malformed GPX {gpx_file.name} — {exc}")
+            if malformed_files is not None:
+                malformed_files.add(gpx_file.name)
             continue
         if points:
             results.append((gpx_file.name, points))
@@ -317,6 +324,10 @@ WALK_MIN_DURATION_MINS = 3.0
 WALK_MAX_DISTANCE_M = 1000.0
 
 
+WALK_GUARD_MIN_DISTANCE_KM = 10.0
+WALK_GUARD_MIN_DURATION_MIN = 20.0
+
+
 def detect_and_truncate_walk(
     points: List[TrackPoint],
     *anchors: Anchor,
@@ -337,6 +348,11 @@ def detect_and_truncate_walk(
       walk_duration_mins — duration of the removed walk segment
     """
     if len(points) < 10:
+        return points, False, 0.0
+
+    # Guard: skip walk detection on trips too short to be commutes
+    duration_min = (points[-1].time - points[0].time).total_seconds() / 60.0
+    if duration_min < WALK_GUARD_MIN_DURATION_MIN:
         return points, False, 0.0
 
     end = points[-1]
@@ -521,6 +537,11 @@ def parse_trips(
         if result is None:
             discarded.append((names, "unrelated - no anchor match"))
         else:
+            if result["partial"]:
+                if (result["distance_km"] < PARTIAL_MIN_DISTANCE_KM
+                        or result["duration_min"] < PARTIAL_MIN_DURATION_MIN):
+                    discarded.append((names, "partial below minimum threshold"))
+                    continue
             result["filename"] = "; ".join(names)
             trips.append(result)
 
@@ -615,6 +636,10 @@ def save_processed(processed_path: str, processed_files: Set[str]) -> None:
         json.dump({"files": sorted(processed_files)}, f, indent=2)
 
 
+PARTIAL_MIN_DISTANCE_KM = 10.0
+PARTIAL_MIN_DURATION_MIN = 20.0
+
+
 def parse_trips_incremental(
     gpx_dir: str,
     home: Anchor,
@@ -634,12 +659,17 @@ def parse_trips_incremental(
       discarded        — unrelated groups (also new/changed)
       touched_filesets — set-per-group, used to remove stale CSV rows on re-merge
     """
-    files = load_and_sort_gpx_files(gpx_dir)
+    malformed: Set[str] = set()
+    files = load_and_sort_gpx_files(gpx_dir, malformed_files=malformed)
     groups = merge_consecutive_groups(files, merge_gap_minutes)
 
     new_trips: List[Dict] = []
     discarded: List[Tuple[List[str], str]] = []
     touched_filesets: List[Set[str]] = []
+
+    # Malformed files are marked as processed so they aren't retried
+    if malformed:
+        touched_filesets.append(malformed)
 
     for names, points in groups:
         names_set = set(names)
@@ -653,6 +683,12 @@ def parse_trips_incremental(
         if result is None:
             discarded.append((names, "unrelated - no anchor match"))
         else:
+            # Filter: partial trips must meet minimum distance and duration
+            if result["partial"]:
+                if (result["distance_km"] < PARTIAL_MIN_DISTANCE_KM
+                        or result["duration_min"] < PARTIAL_MIN_DURATION_MIN):
+                    discarded.append((names, "partial below minimum threshold"))
+                    continue
             result["filename"] = "; ".join(names)
             new_trips.append(result)
 
