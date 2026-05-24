@@ -84,9 +84,11 @@ tripDrvTime (min), tripIdleTime (min), tripDist (km), tripAvgSpeed (km/h), tripM
 - OsmAnd logs: lat/lon, timestamp, elevation, speed (m/s), HDOP at every point
 - Speed stored under OsmAnd namespace: https://osmand.net/docs/technical/osmand-file-formats/osmand-gpx
 - Point interval: ~5-6 seconds — sufficient for junction-level bottleneck detection
-- Parser handles malformed GPX files gracefully (skips with warning)
-- Gap-based stop detection confirmed: 3 stops correctly detected (65.2, 51.3, 52.7 min)
+- Parser handles malformed GPX files gracefully (skips with warning — but does NOT add to processed.json, so retried every run)
+- Gap-based stop detection confirmed: 8 stops correctly detected across 41 trips (longest: 95.3 min)
 - Walk detection: trailing walk segments (< 7 km/h for > 3 min, < 1 km) auto-truncated from trips ending near OFFICE or HOME. Endpoint reclassified after truncation. Fields: walk_detected, walk_duration_mins
+- Compound cases confirmed working: Scenario C + walk + long stop all detected independently on same trip (May 18, May 19)
+- As of 2026-05-25: 67 GPX files, 34 classified trips (22 full, 12 partial), 30 discarded (includes 7 filtered sub-threshold partials), 1 malformed
 
 ### GPX file transfer method (manual, weekly)
 - Android 13+ blocks access to Android/data/ from Files app
@@ -223,6 +225,12 @@ Timestamp gap > 20 min + displacement < 150m + entry speed < 15 km/h + not at an
 ### Incremental processing
 outputs/processed.json tracks processed filenames. Each run only processes new files.
 
+### Known parser limitations (as of 2026-05-25)
+1. ~~Malformed files not added to processed.json~~ — **FIXED**: malformed files now added to processed.json after skipping, warning appears once only
+2. ~~No minimum distance/duration filter on partials~~ — **FIXED**: partials must be ≥10 km AND ≥20 min, otherwise discarded silently. Removed 7 false-positive local errands
+3. ~~Walk detection fires on ultra-short trips~~ — **FIXED**: walk detection skipped on trips <10 km or <20 min duration
+4. **Long detours without gaps escape stop detection** — by design (no 20+ min gap = no stop). Correctly handled as outlier routes by clustering
+
 ---
 
 ## Full Pipeline — python main.py
@@ -258,11 +266,12 @@ outputs/processed.json tracks processed filenames. Each run only processes new f
 - [x] Google Sheet CSV fetch in main.py
 - [x] Petrol price lookup from petrol_prices.csv
 - [x] Parser resilient to malformed GPX files (skips with warning)
-- [x] Join pipeline verified end-to-end — 19 GPX files, 14 trips, 12 sheet rows, weather + Bluelink all populated
+- [x] Join pipeline verified end-to-end — 67 GPX files, 34 trips (22 full + 12 partial), 25 sheet rows, weather + Bluelink all populated
 - [x] requirements.txt created
 - [x] All markdown files created: README, CLAUDE, learnings, specs, roadmap, CONTRIBUTING
 - [x] All changes committed and pushed to GitHub
-- [x] Walk detection: trailing walk segments auto-truncated from trips ending near OFFICE or HOME (< 7 km/h, > 3 min, < 1 km). 3 walks detected across 14 trips (all office-end, 0 home-end)
+- [x] Walk detection: trailing walk segments auto-truncated from trips ending near OFFICE or HOME (< 7 km/h, > 3 min, < 1 km). 12 walks detected across 41 trips (mostly office-end outbound, 2 return-end)
+- [x] Compound detection confirmed: Scenario C + walk + long stop all fire independently on same trip
 
 ### Done (Phase 3)
 - [x] cluster.py — DBSCAN path similarity clustering (outbound/return separate), Nominatim labels, 5-trip minimum per direction, route_cluster column in master_trips.csv
