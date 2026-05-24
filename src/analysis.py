@@ -183,6 +183,7 @@ def generate_dashboard(csv_path: str, output_path: str) -> None:
         if str(r.get("partial", "")).lower() != "true"
         and str(r.get("outlier", "")).lower() != "true"
         and str(r.get("near_office", "")).lower() != "true"
+        and str(r.get("suspected_unreported_stop", "")).lower() != "true"
     ]
     n = len(full)
 

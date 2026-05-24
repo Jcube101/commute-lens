@@ -186,6 +186,18 @@ With a paused recording, the gap between the last pre-stop point and the first p
 
 ---
 
+## Return route clusters reflect parking choice, not genuinely different routes
+
+**What the clustering showed:** Office-to-Home trips split into two clusters: "Via Swamy Vivekananda Road" (7 trips, avg 28.2 km, 103 min) and "Via Residency Road" (3 trips, avg 22.2 km, 76 min).
+
+**What it actually means:** The two clusters aren't alternative routes to the same destination — they're the same route with different starting points. Vivekananda Road trips go via the mall first (parking there on busy office-parking days, or Scenario C detours), adding ~6 km. Residency Road trips go directly home. Average speeds are identical (~21 km/h), confirming the time difference (28 min) is explained entirely by extra distance, not traffic conditions.
+
+**Key pattern:** All 3 Residency Road trips departed after 20:15. All 7 Vivekananda trips departed before 20:20 (most before 20:00). Late departures correlate with direct-home drives — no mall stop needed.
+
+**Actionable insight:** On days with no mall stop, departing after 20:15 via Residency Road saves 28 minutes and 6 km compared to the mall-route average. This is the single biggest time-saving variable in the return commute.
+
+---
+
 ## Bluelink API does not provide per-trip mileage for India
 
 **What I tested:** `hyundai_kia_connect_api` v4.10.3 with region=6 (India), brand=2 (Hyundai), against a Hyundai Exter AMT registered Dec 2024.

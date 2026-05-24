@@ -235,6 +235,9 @@ outputs/processed.json tracks processed filenames. Each run only processes new f
 ### Distance outlier detection
 Trips whose distance exceeds 2.5 SD from mean distance for their direction are flagged `outlier=True` with reason string. Requires ≥5 full trips per direction. Outliers excluded from clustering, dashboard, and departure time analysis but kept in heatmap and master_trips.csv. Current status (2026-05-25): 0 outliers flagged — return direction has high natural variance (SD 3.13 km) due to mall-detour vs direct routes.
 
+### Suspected unreported stop detection
+Compound rule: adjusted duration >2.5 SD from direction mean AND effective speed (distance/duration) <15 km/h AND stop_detected=False. Uses effective speed because OsmAnd's per-point avg ignores stationary time. Catches recordings left running through activities (shooting range, football) with intermittent movement. Flagged trips: excluded from departure time analysis and duration averages, kept in heatmap. Pipeline prints a warning for each. Current: 1 trip flagged (May 5 return, 251 min, 7.3 km/h effective).
+
 ### Near-office classification
 Trips ending 150m–800m from OFFICE (outside anchor radius but plausibly office-area) get `near_office=True`. Included in heatmap and CSV but excluded from parking analysis, departure time curves, and clustering. Bidirectional: also catches trips starting in the near-office zone heading home.
 
