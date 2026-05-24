@@ -36,6 +36,7 @@ One row per classified trip. All fields are strings in the CSV.
 | `avg_speed_kmh` | float | OsmAnd speed avg | Average of per-point OsmAnd speeds; falls back to distance/time |
 | `parking` | str | Endpoint anchor match | "Office", "Mall", "Sent to Mall", or "Unknown" |
 | `partial` | bool | Classification | True if recording started mid-route (not at an anchor) |
+| `near_office` | bool | Classification | True if endpoint is 150m–800m from OFFICE (outside anchor radius) |
 | `scenario_c` | bool | Mid-route OFFICE match | True if OFFICE coordinates appear mid-route before MALL endpoint |
 | `stop_detected` | bool | Gap detector | True if at least one mid-trip stop was flagged |
 | `stop_duration_mins` | float | Gap detector | Sum of all detected stop durations |
@@ -58,6 +59,10 @@ One row per classified trip. All fields are strings in the CSV.
 | `weather_condition` | str | Open-Meteo | Clear / Cloudy / Rain / Heavy Rain (from WMO code) |
 | `temp_c` | float | Open-Meteo | Temperature at departure hour (°C) |
 | `precipitation_mm` | float | Open-Meteo | Precipitation at departure hour (mm) |
+| `outlier` | bool | Outlier detector | True if distance >2.5 SD from direction mean |
+| `outlier_reason` | str | Outlier detector | Explanation: "distance outlier (X km vs mean Y km, Z SD)" |
+| `suspected_unreported_stop` | bool | Duration detector | True if duration >2.5 SD AND effective speed <15 km/h AND no gap |
+| `suspected_stop_reason` | str | Duration detector | Explanation with stats |
 | `route_cluster` | str | cluster.py | DBSCAN route label (e.g. "Via Outer Ring Rd") or "Unclustered — insufficient data" |
 
 ---
@@ -277,6 +282,21 @@ Add a new row each time the pump price changes. Do not modify existing rows.
 | `data/reference/petrol_prices.csv` | Yes | Fuel price reference (no personal data) |
 | `data/demo/` | Yes | Synthetic commuter data for portfolio demo |
 | `config.example.yaml` | Yes | Placeholder template |
+
+---
+
+## Heatmap layer specification
+
+`outputs/heatmap.html` — Folium map with LayerControl (top-right, expanded by default).
+
+| Layer | Contents | Default | Colour | Style |
+|-------|----------|---------|--------|-------|
+| Commute trips (full) — N | Full non-outlier, non-flagged trips | **ON** | Speed-coloured (green >30, yellow 15–30, orange 5–15, red <5 km/h) | Solid lines |
+| Partial commute trips — N | Trips with `partial=True` | OFF | Speed-coloured | Dashed lines (`8 4`) |
+| Non-commute trips — N | Trips with `near_office=True` | OFF | Grey (`#888888`) | Solid lines |
+| Flagged trips — N | Trips with `outlier=True` or `suspected_unreported_stop=True` | OFF | Purple (`#9b59b6`) | Solid lines |
+
+Line thickness encodes trip coverage (how many trips pass through each ~50m grid cell). Segments >500m between consecutive points are skipped (recording gaps). CartoDB Positron tiles (no referer required, works from `file://`).
 
 ---
 

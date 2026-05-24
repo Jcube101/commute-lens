@@ -198,6 +198,16 @@ With a paused recording, the gap between the last pre-stop point and the first p
 
 ---
 
+## Effective speed vs OsmAnd per-point average for anomaly detection
+
+**The problem:** OsmAnd's average speed (mean of per-point `<osmand:speed>` values) is useless for detecting unreported stops. A trip where someone drove 30 km in 251 minutes (effective speed 7.3 km/h) shows an OsmAnd average of 20.9 km/h — because OsmAnd only logs points when the car is moving above its displacement threshold (10m). Stationary time produces zero points, making the per-point average completely blind to stops.
+
+**The fix:** Use effective speed = distance_km / duration_min × 60. This is the ground truth for how fast you actually got from A to B. When effective speed is anomalously low (<15 km/h) combined with duration being >2.5 SD above the direction mean and no clean stop gap detected, the trip likely had an unreported activity period (shooting range, football) where the user forgot to pause recording.
+
+**Why this matters beyond this project:** Any GPS analysis using OsmAnd (or similar displacement-gated loggers) that computes speed from per-point values will systematically overestimate speed and miss stationary periods. The per-point average only tells you "how fast were you when you were moving" — not "how efficiently did you cover this route."
+
+---
+
 ## Bluelink API does not provide per-trip mileage for India
 
 **What I tested:** `hyundai_kia_connect_api` v4.10.3 with region=6 (India), brand=2 (Hyundai), against a Hyundai Exter AMT registered Dec 2024.

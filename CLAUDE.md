@@ -225,12 +225,12 @@ Timestamp gap > 20 min + displacement < 150m + entry speed < 15 km/h + not at an
 ### Incremental processing
 outputs/processed.json tracks processed filenames. Each run only processes new files.
 
-### Known parser limitations (as of 2026-05-25)
+### Known parser limitations (as of 2026-05-25) — all resolved
 1. ~~Malformed files not added to processed.json~~ — **FIXED**
 2. ~~No minimum distance/duration filter on partials~~ — **FIXED**: ≥10 km AND ≥20 min threshold
 3. ~~Walk detection fires on ultra-short trips~~ — **FIXED**: guard on trips <10 km or <20 min
-4. **Long detours without gaps escape stop detection** — by design (no 20+ min gap = no stop). Correctly handled as outlier routes by clustering
-5. **Near-office zone (150m–800m) catches no current trips** — all borderline trips end >1 km from office. May need wider radius if pattern continues
+4. ~~Long detours without gaps escape stop detection~~ — **RESOLVED**: suspected unreported stop detection catches these via effective speed + duration anomaly compound rule
+5. **Near-office zone (150m–800m) catches no current trips** — all borderline trips end >1 km from office. Feature ready for future trips that land in range
 
 ### Distance outlier detection
 Trips whose distance exceeds 2.5 SD from mean distance for their direction are flagged `outlier=True` with reason string. Requires ≥5 full trips per direction. Outliers excluded from clustering, dashboard, and departure time analysis but kept in heatmap and master_trips.csv. Current status (2026-05-25): 0 outliers flagged — return direction has high natural variance (SD 3.13 km) due to mall-detour vs direct routes.
@@ -286,7 +286,7 @@ Trips ending 150m–800m from OFFICE (outside anchor radius but plausibly office
 ### Done (Phase 3)
 - [x] cluster.py — DBSCAN path similarity clustering (outbound/return separate), Nominatim labels, 5-trip minimum per direction, route_cluster column in master_trips.csv
 - [x] analysis.py — generate_heatmap() and generate_dashboard(), called by main.py steps 6-7
-- [x] heatmap.html — Folium + CartoDB Positron tiles (file:// compatible), speed-coloured segments (green/yellow/orange/red), coverage-weighted thickness, no anchor markers, legend
+- [x] heatmap.html — Folium + CartoDB Positron tiles (file:// compatible), speed-coloured segments (green/yellow/orange/red), coverage-weighted thickness, no anchor markers, legend, LayerControl with 4 toggleable layers (Commute/Partial/Non-commute/Flagged)
 - [x] dashboard.html — Plotly self-contained HTML, 5 charts (departure vs duration, day-of-week, duration trend, mileage trend, parking pie), #e85d04 orange + dark theme
 - [x] Pipeline expanded to 7 steps: parse → Bluelink → sheet → petrol → enrich → cluster → visualise
 - [x] Dependencies: numpy, scikit-learn, folium, plotly added to requirements.txt

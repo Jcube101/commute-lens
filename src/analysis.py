@@ -49,29 +49,34 @@ def _speed_color(speed_kmh: Optional[float]) -> str:
 # Heatmap
 # ---------------------------------------------------------------------------
 
-def _load_all_trip_points(csv_path: str, gpx_dir: str) -> List[List[TrackPoint]]:
-    """Load GPS points for every trip in master_trips.csv (including partials)."""
-    rows: List[Dict] = []
-    with open(csv_path, newline="", encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
+def _load_trip_points_for_row(row: Dict, gpx_dir: str) -> Optional[List[TrackPoint]]:
+    """Load GPS points for a single trip row."""
+    filename = row.get("filename", "")
+    parts = [p.strip() for p in filename.split(";")]
+    points: List[TrackPoint] = []
+    for part in parts:
+        gpx_path = os.path.join(gpx_dir, part)
+        if os.path.exists(gpx_path):
+            try:
+                points.extend(parse_gpx(gpx_path))
+            except Exception:
+                continue
+    if points:
+        points.sort(key=lambda p: p.time)
+        return points
+    return None
 
-    all_tracks: List[List[TrackPoint]] = []
-    for row in rows:
-        filename = row.get("filename", "")
-        parts = [p.strip() for p in filename.split(";")]
-        points: List[TrackPoint] = []
-        for part in parts:
-            gpx_path = os.path.join(gpx_dir, part)
-            if os.path.exists(gpx_path):
-                try:
-                    points.extend(parse_gpx(gpx_path))
-                except Exception:
-                    continue
-        if points:
-            points.sort(key=lambda p: p.time)
-            all_tracks.append(points)
 
-    return all_tracks
+def _classify_row_layer(row: Dict) -> str:
+    """Classify a trip row into one of four heatmap layers."""
+    if (str(row.get("outlier", "")).lower() == "true"
+            or str(row.get("suspected_unreported_stop", "")).lower() == "true"):
+        return "flagged"
+    if str(row.get("partial", "")).lower() == "true":
+        return "partial"
+    if str(row.get("near_office", "")).lower() == "true":
+        return "non_commute"
+    return "commute"
 
 
 def _segment_coverage(all_tracks: List[List[TrackPoint]], grid_size: float = 50.0) -> Dict[Tuple[int, int], int]:
@@ -88,8 +93,29 @@ def _segment_coverage(all_tracks: List[List[TrackPoint]], grid_size: float = 50.
 
 
 def generate_heatmap(csv_path: str, gpx_dir: str, output_path: str) -> None:
-    """Generate a Folium speed-coloured heatmap of all recorded trips."""
-    all_tracks = _load_all_trip_points(csv_path, gpx_dir)
+    """Generate a Folium speed-coloured heatmap with toggleable trip type layers."""
+    rows: List[Dict] = []
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+
+    if not rows:
+        print("  No tracks to plot.")
+        return
+
+    # Group rows by layer and load their points
+    layer_tracks: Dict[str, List[List[TrackPoint]]] = {
+        "commute": [], "partial": [], "non_commute": [], "flagged": [],
+    }
+    all_tracks: List[List[TrackPoint]] = []
+
+    for row in rows:
+        points = _load_trip_points_for_row(row, gpx_dir)
+        if not points:
+            continue
+        layer = _classify_row_layer(row)
+        layer_tracks[layer].append(points)
+        all_tracks.append(points)
+
     if not all_tracks:
         print("  No tracks to plot.")
         return
@@ -109,49 +135,63 @@ def generate_heatmap(csv_path: str, gpx_dir: str, output_path: str) -> None:
         attr="&copy; OpenStreetMap contributors &copy; CartoDB",
     )
 
-    for points in all_tracks:
-        for i in range(1, len(points)):
-            p1, p2 = points[i - 1], points[i]
+    # Layer config: (key, label_prefix, color_fn, dash_array, default_show)
+    layer_config = [
+        ("commute", "Commute trips (full)", None, None, True),
+        ("partial", "Partial commute trips", None, "8 4", False),
+        ("non_commute", "Non-commute trips", lambda _: "#888888", None, False),
+        ("flagged", "Flagged trips", lambda _: "#9b59b6", None, False),
+    ]
 
-            if haversine(p1.lat, p1.lon, p2.lat, p2.lon) > 500:
-                continue
+    for key, label_prefix, color_fn, dash_array, show in layer_config:
+        tracks = layer_tracks[key]
+        count = len(tracks)
+        layer_name = f"{label_prefix} — {count}"
 
-            speed = p1.speed_kmh
-            color = _speed_color(speed)
+        fg = folium.FeatureGroup(name=layer_name, show=show)
 
-            cell = (int(p1.lat * 111000 / 50.0), int(p1.lon * 111000 / 50.0))
-            trips_here = coverage.get(cell, 1)
-            weight = 2 + (trips_here / max_coverage) * 4
+        for points in tracks:
+            for i in range(1, len(points)):
+                p1, p2 = points[i - 1], points[i]
 
-            folium.PolyLine(
-                locations=[[p1.lat, p1.lon], [p2.lat, p2.lon]],
-                color=color,
-                weight=weight,
-                opacity=0.7,
-            ).add_to(m)
+                if haversine(p1.lat, p1.lon, p2.lat, p2.lon) > 500:
+                    continue
+
+                speed = p1.speed_kmh
+                color = color_fn(speed) if color_fn else _speed_color(speed)
+
+                cell = (int(p1.lat * 111000 / 50.0), int(p1.lon * 111000 / 50.0))
+                trips_here = coverage.get(cell, 1)
+                weight = 2 + (trips_here / max_coverage) * 4
+
+                folium.PolyLine(
+                    locations=[[p1.lat, p1.lon], [p2.lat, p2.lon]],
+                    color=color,
+                    weight=weight,
+                    opacity=0.7,
+                    dash_array=dash_array,
+                ).add_to(fg)
+
+        fg.add_to(m)
+
+    folium.LayerControl(position="topright", collapsed=False).add_to(m)
 
     legend_html = """
     <div style="position:fixed; bottom:30px; left:30px; z-index:1000;
                 background:white; padding:12px 16px; border-radius:8px;
                 box-shadow:0 2px 6px rgba(0,0,0,0.3); font-family:sans-serif; font-size:13px;">
-        <b>Commute speed heatmap &mdash; all recorded trips</b><br><br>
+        <b>Speed legend</b><br><br>
         <span style="background:#00aa44;padding:2px 10px;color:white;border-radius:3px;">&gt;30 km/h</span><br>
         <span style="background:#ffcc00;padding:2px 10px;border-radius:3px;">15&ndash;30 km/h</span><br>
         <span style="background:#ff6600;padding:2px 10px;color:white;border-radius:3px;">5&ndash;15 km/h</span><br>
         <span style="background:#ff2222;padding:2px 10px;color:white;border-radius:3px;">&lt;5 km/h</span><br>
-        <br><span style="font-size:11px;color:#666;">Line thickness = trip coverage</span>
+        <br>
+        <span style="background:#888888;padding:2px 10px;color:white;border-radius:3px;">Non-commute</span><br>
+        <span style="background:#9b59b6;padding:2px 10px;color:white;border-radius:3px;">Flagged</span><br>
+        <br><span style="font-size:11px;color:#666;">Line thickness = trip coverage<br>Dashed = partial trip</span>
     </div>
     """
     m.get_root().html.add_child(folium.Element(legend_html))
-
-    title_html = """
-    <div style="position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:1000;
-                background:white; padding:8px 20px; border-radius:8px;
-                box-shadow:0 2px 6px rgba(0,0,0,0.3); font-family:sans-serif; font-size:16px; font-weight:bold;">
-        Commute speed heatmap &mdash; all recorded trips
-    </div>
-    """
-    m.get_root().html.add_child(folium.Element(title_html))
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     m.save(output_path)

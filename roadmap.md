@@ -46,19 +46,26 @@
 
 **Goal:** Turn structured data into useful visuals.
 
-- [x] `cluster.py` — DBSCAN path similarity clustering (separate for outbound/return), descriptive route labels via Nominatim reverse geocoding (e.g. "Via Outer Ring Rd"). Requires 5+ full trips per direction; currently labelling all trips as "Unclustered — insufficient data" (2 full outbound, 3 full return). `route_cluster` column added to `master_trips.csv`
-- [x] `heatmap.html` — Folium map with CartoDB Positron tiles (file:// compatible — OSM requires referer header). All trips plotted (including partials). Speed-coloured segments: green >30 km/h, yellow 15–30, orange 5–15, red <5. Line thickness scaled by trip coverage. No home/office markers. Legend and title overlay
-- [x] `dashboard.html` — Plotly self-contained HTML. Full trips only for stats (sample size noted on each chart). Charts: departure time vs duration scatter (outbound/return series), day-of-week avg duration bar (outbound), duration over time line, mileage over time line, parking distribution pie. #e85d04 orange accent, dark theme
-- [x] `analysis.py` — generates both `heatmap.html` and `dashboard.html` from `master_trips.csv` and GPX files. Called by `main.py` as pipeline steps 6–7
-- [x] Pipeline updated to 7 steps: parse → Bluelink → sheet → petrol → enrich → cluster → visualise
-- [x] Walk detection: trailing walk segments (< 7 km/h, > 3 min, < 1 km) auto-truncated from trips ending near OFFICE or HOME. Truncated endpoint used for classification. 3 walks detected across 14 trips
-- [x] `parser.py` updated with `walk_detected` and `walk_duration_mins` fields in `master_trips.csv`
+- [x] `cluster.py` — DBSCAN path similarity clustering (separate for outbound/return), descriptive route labels via Nominatim reverse geocoding. Clustering active: outbound 1 cluster (Via Hennur Main Road, 11 trips), return 2 clusters (Via Swamy Vivekananda Road 7, Via Residency Road 3). `route_cluster` column in `master_trips.csv`
+- [x] `heatmap.html` — Folium map with CartoDB Positron tiles + LayerControl (top-right). 4 toggleable layers: Commute trips (on by default, speed-coloured), Partial trips (off, dashed), Non-commute (off, grey), Flagged (off, purple). Coverage-weighted thickness. No home/office markers
+- [x] `dashboard.html` — Plotly self-contained HTML. Full non-outlier non-flagged trips only for stats. Charts: departure time vs duration scatter, day-of-week bar, duration trend, mileage trend, parking pie. #e85d04 orange + dark theme
+- [x] `analysis.py` — generates both outputs from `master_trips.csv` and GPX files. Called by `main.py` steps 6–7
+- [x] Pipeline: 7 steps (parse → Bluelink → sheet → petrol → enrich+outliers → cluster → visualise)
+- [x] Walk detection: trailing walk segments auto-truncated (< 7 km/h, > 3 min, < 1 km). Guard: skipped on trips <10 km or <20 min
+- [x] Distance outlier detection: >2.5 SD from direction mean distance → excluded from stats
+- [x] Suspected unreported stop detection: duration >2.5 SD + effective speed <15 km/h + no gap → excluded from stats
+- [x] Near-office classification: 150m–800m from OFFICE → included in heatmap, excluded from stats
+- [x] Partial trip filter: ≥10 km AND ≥20 min minimum, otherwise discarded
+- [x] Malformed file dedup: skipped files added to processed.json, warning once only
+- [x] Current counts (2026-05-25): 34 trips (21 full commute + 12 partial + 1 flagged), 30 discarded
 
 ---
 
-## Phase 4 — Demo mode and portfolio (after ~40 real trips)
+## Phase 4 — Demo mode and portfolio (pending — target 40 full trips, ETA early-mid July 2026)
 
 **Goal:** Make this presentable as a portfolio project without exposing personal location data.
+
+**Status:** 21 full commute trips as of 2026-05-25. Need ~19 more full trips at current pace (~10-12/month from weekday commutes).
 
 ### Synthetic demo mode (`generate_demo.py`)
 
