@@ -59,6 +59,8 @@ ENRICHMENT_FIELDS = [
     "precipitation_mm",   # Open-Meteo precipitation at departure hour
     "outlier",            # True if distance is >2.5 SD from direction mean
     "outlier_reason",     # e.g. "distance outlier (30.7 km vs mean 22.4 km, 2.8 SD)"
+    "suspected_unreported_stop",  # True if duration anomaly without detected gap
+    "suspected_stop_reason",      # explanation of detection
     "route_cluster",      # from cluster.py — DBSCAN path similarity label
 ]
 
@@ -311,6 +313,87 @@ def detect_distance_outliers(rows: List[Dict]) -> int:
     return flagged
 
 
+UNREPORTED_STOP_SD_THRESHOLD = 2.5
+UNREPORTED_STOP_MAX_EFFECTIVE_SPEED_KMH = 15.0
+
+
+def detect_unreported_stops(rows: List[Dict]) -> int:
+    """
+    Flag trips with anomalously long duration but no detected stop gap.
+
+    Compound rule: adjusted duration >2.5 SD from direction mean AND
+    effective speed (distance/duration) <15 km/h AND stop_detected=False.
+    Uses effective speed rather than OsmAnd avg speed because OsmAnd only
+    logs points when moving — its average ignores stationary time entirely.
+
+    This catches recordings left running through activities (shooting range,
+    football) where intermittent movement prevents gap-based stop detection.
+    """
+    import statistics
+
+    flagged = 0
+    for direction in ("Home to Office", "Office to Home"):
+        dir_full = [
+            r for r in rows
+            if r.get("direction") == direction
+            and str(r.get("partial", "")).lower() != "true"
+            and str(r.get("outlier", "")).lower() != "true"
+        ]
+
+        if len(dir_full) < OUTLIER_MIN_TRIPS:
+            continue
+
+        durations = []
+        for r in dir_full:
+            dur = float(r.get("adjusted_duration_mins") or r.get("duration_min") or 0)
+            if dur > 0:
+                durations.append(dur)
+
+        if len(durations) < OUTLIER_MIN_TRIPS:
+            continue
+
+        mean_dur = statistics.mean(durations)
+        sd_dur = statistics.stdev(durations)
+
+        if sd_dur == 0:
+            continue
+
+        for r in dir_full:
+            dur = float(r.get("adjusted_duration_mins") or r.get("duration_min") or 0)
+            dist = float(r.get("distance_km") or 0)
+            stop_detected = str(r.get("stop_detected", "")).lower() == "true"
+
+            # Effective speed: actual distance / total elapsed time
+            effective_speed = (dist / dur * 60.0) if dur > 0 else 0.0
+
+            z_score = (dur - mean_dur) / sd_dur if sd_dur > 0 else 0
+
+            if (z_score > UNREPORTED_STOP_SD_THRESHOLD
+                    and effective_speed < UNREPORTED_STOP_MAX_EFFECTIVE_SPEED_KMH
+                    and not stop_detected):
+                r["suspected_unreported_stop"] = "True"
+                r["suspected_stop_reason"] = (
+                    f"duration anomaly ({dur:.0f} min vs mean {mean_dur:.0f} min, "
+                    f"{z_score:.1f} SD) with effective speed {effective_speed:.1f} km/h, "
+                    f"no gap detected"
+                )
+                print(
+                    f"  WARNING: Trip on {r.get('date')} {direction} flagged as "
+                    f"suspected unreported stop — review and add Notes if confirmed."
+                )
+                flagged += 1
+            else:
+                r.setdefault("suspected_unreported_stop", "")
+                r.setdefault("suspected_stop_reason", "")
+
+    # Clear fields for rows not evaluated
+    for r in rows:
+        r.setdefault("suspected_unreported_stop", "")
+        r.setdefault("suspected_stop_reason", "")
+
+    return flagged
+
+
 # ---------------------------------------------------------------------------
 # CSV I/O
 # ---------------------------------------------------------------------------
@@ -442,7 +525,12 @@ if __name__ == "__main__":
     # Outlier detection (distance-based, per direction)
     outlier_count = detect_distance_outliers(enriched)
     if outlier_count:
-        print(f"  {outlier_count} outlier(s) flagged.")
+        print(f"  {outlier_count} distance outlier(s) flagged.")
+
+    # Suspected unreported stop detection (duration anomaly without gap)
+    stop_count = detect_unreported_stops(enriched)
+    if stop_count:
+        print(f"  {stop_count} suspected unreported stop(s) flagged.")
 
     save_cache(str(weather_cache_path), weather_cache)
     write_master_csv(enriched, str(output_csv))
