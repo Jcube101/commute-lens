@@ -37,6 +37,7 @@ CSV_FIELDS = [
     "avg_speed_kmh",
     "parking",
     "partial",
+    "near_office",
     "scenario_c",
     "stop_detected",
     "stop_duration_mins",
@@ -327,6 +328,9 @@ WALK_MAX_DISTANCE_M = 1000.0
 WALK_GUARD_MIN_DISTANCE_KM = 10.0
 WALK_GUARD_MIN_DURATION_MIN = 20.0
 
+NEAR_OFFICE_MIN_M = 150.0
+NEAR_OFFICE_MAX_M = 800.0
+
 
 def detect_and_truncate_walk(
     points: List[TrackPoint],
@@ -439,7 +443,18 @@ def classify_trip(
     direction: Optional[str] = None
     parking: Optional[str] = None
     partial = False
+    near_office = False
     scenario_c = False
+
+    # Check near-office zone (outside anchor radius but plausibly office-area)
+    end_near_office = (
+        not end_office and not end_mall
+        and NEAR_OFFICE_MIN_M < office.distance_to(end.lat, end.lon) <= NEAR_OFFICE_MAX_M
+    )
+    start_near_office = (
+        not start_office and not start_mall
+        and NEAR_OFFICE_MIN_M < office.distance_to(start.lat, start.lon) <= NEAR_OFFICE_MAX_M
+    )
 
     if start_home and end_office:
         direction, parking = "Home to Office", "Office"
@@ -461,6 +476,18 @@ def classify_trip(
             )
         else:
             parking = "Office" if start_office else "Mall"
+
+    elif start_home and end_near_office:
+        # Near-office: ended close to office area but outside anchor radius
+        near_office = True
+        direction, parking = "Home to Office", "Near Office"
+
+    elif (start_near_office or start_office or start_mall) and end_home:
+        if not (start_office or start_mall):
+            # Started from near-office zone, not exact anchor
+            near_office = True
+        direction = "Office to Home"
+        parking = "Near Office" if near_office else parking
 
     elif end_anchor and not start_anchor:
         # Partial: recording didn't begin at an anchor (e.g. forgot to start at home)
@@ -495,6 +522,7 @@ def classify_trip(
         "avg_speed_kmh": round(calc_avg_speed_kmh(points), 1),
         "parking": parking,
         "partial": partial,
+        "near_office": near_office,
         "scenario_c": scenario_c,
         "stop_detected": stop_detected,
         "stop_duration_mins": stop_duration_mins,
