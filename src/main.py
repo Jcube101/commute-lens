@@ -57,6 +57,8 @@ ENRICHMENT_FIELDS = [
     "weather_condition",  # Open-Meteo: Clear / Cloudy / Rain / Heavy Rain
     "temp_c",             # Open-Meteo temperature at departure
     "precipitation_mm",   # Open-Meteo precipitation at departure hour
+    "outlier",            # True if distance is >2.5 SD from direction mean
+    "outlier_reason",     # e.g. "distance outlier (30.7 km vs mean 22.4 km, 2.8 SD)"
     "route_cluster",      # from cluster.py — DBSCAN path similarity label
 ]
 
@@ -246,6 +248,70 @@ def enrich_row(
 
 
 # ---------------------------------------------------------------------------
+# Outlier detection
+# ---------------------------------------------------------------------------
+
+OUTLIER_SD_THRESHOLD = 2.5
+OUTLIER_MIN_TRIPS = 5
+
+
+def detect_distance_outliers(rows: List[Dict]) -> int:
+    """
+    Flag trips whose distance is >2.5 SD from the mean for their direction.
+
+    Only considers full (non-partial) trips. Requires at least 5 trips per
+    direction to compute meaningful statistics. Returns count of outliers found.
+    """
+    import statistics
+
+    flagged = 0
+    for direction in ("Home to Office", "Office to Home"):
+        dir_full = [
+            r for r in rows
+            if r.get("direction") == direction
+            and str(r.get("partial", "")).lower() != "true"
+        ]
+
+        if len(dir_full) < OUTLIER_MIN_TRIPS:
+            continue
+
+        distances = [float(r["distance_km"]) for r in dir_full if r.get("distance_km")]
+        if len(distances) < OUTLIER_MIN_TRIPS:
+            continue
+
+        mean_dist = statistics.mean(distances)
+        sd_dist = statistics.stdev(distances)
+
+        if sd_dist == 0:
+            continue
+
+        for r in dir_full:
+            try:
+                dist = float(r["distance_km"])
+            except (ValueError, TypeError):
+                continue
+            z_score = (dist - mean_dist) / sd_dist
+            if abs(z_score) > OUTLIER_SD_THRESHOLD:
+                r["outlier"] = "True"
+                r["outlier_reason"] = (
+                    f"distance outlier ({dist:.1f} km vs mean {mean_dist:.1f} km, "
+                    f"{z_score:.1f} SD)"
+                )
+                flagged += 1
+            else:
+                r["outlier"] = ""
+                r["outlier_reason"] = ""
+
+    # Clear outlier fields for partials (not evaluated)
+    for r in rows:
+        if "outlier" not in r:
+            r["outlier"] = ""
+            r["outlier_reason"] = ""
+
+    return flagged
+
+
+# ---------------------------------------------------------------------------
 # CSV I/O
 # ---------------------------------------------------------------------------
 
@@ -372,6 +438,11 @@ if __name__ == "__main__":
             enrich_row(row, sheet_index, petrol_prices, weather_cache,
                        office.lat, office.lon)
         )
+
+    # Outlier detection (distance-based, per direction)
+    outlier_count = detect_distance_outliers(enriched)
+    if outlier_count:
+        print(f"  {outlier_count} outlier(s) flagged.")
 
     save_cache(str(weather_cache_path), weather_cache)
     write_master_csv(enriched, str(output_csv))

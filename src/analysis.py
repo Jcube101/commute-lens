@@ -178,7 +178,12 @@ def generate_dashboard(csv_path: str, output_path: str) -> None:
     with open(csv_path, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
 
-    full = [r for r in rows if str(r.get("partial", "")).lower() != "true"]
+    full = [
+        r for r in rows
+        if str(r.get("partial", "")).lower() != "true"
+        and str(r.get("outlier", "")).lower() != "true"
+        and str(r.get("near_office", "")).lower() != "true"
+    ]
     n = len(full)
 
     fig = make_subplots(

@@ -180,7 +180,12 @@ def cluster_direction(
       summary_msg — human-readable cluster summary
     """
     dir_trips = [t for t in trips if t["direction"] == direction]
-    full_trips = [t for t in dir_trips if str(t.get("partial", "")).lower() != "true"]
+    full_trips = [
+        t for t in dir_trips
+        if str(t.get("partial", "")).lower() != "true"
+        and str(t.get("outlier", "")).lower() != "true"
+        and str(t.get("near_office", "")).lower() != "true"
+    ]
 
     if len(full_trips) < MIN_TRIPS_FOR_CLUSTERING:
         for t in dir_trips:

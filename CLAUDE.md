@@ -226,21 +226,28 @@ Timestamp gap > 20 min + displacement < 150m + entry speed < 15 km/h + not at an
 outputs/processed.json tracks processed filenames. Each run only processes new files.
 
 ### Known parser limitations (as of 2026-05-25)
-1. ~~Malformed files not added to processed.json~~ — **FIXED**: malformed files now added to processed.json after skipping, warning appears once only
-2. ~~No minimum distance/duration filter on partials~~ — **FIXED**: partials must be ≥10 km AND ≥20 min, otherwise discarded silently. Removed 7 false-positive local errands
-3. ~~Walk detection fires on ultra-short trips~~ — **FIXED**: walk detection skipped on trips <10 km or <20 min duration
+1. ~~Malformed files not added to processed.json~~ — **FIXED**
+2. ~~No minimum distance/duration filter on partials~~ — **FIXED**: ≥10 km AND ≥20 min threshold
+3. ~~Walk detection fires on ultra-short trips~~ — **FIXED**: guard on trips <10 km or <20 min
 4. **Long detours without gaps escape stop detection** — by design (no 20+ min gap = no stop). Correctly handled as outlier routes by clustering
+5. **Near-office zone (150m–800m) catches no current trips** — all borderline trips end >1 km from office. May need wider radius if pattern continues
+
+### Distance outlier detection
+Trips whose distance exceeds 2.5 SD from mean distance for their direction are flagged `outlier=True` with reason string. Requires ≥5 full trips per direction. Outliers excluded from clustering, dashboard, and departure time analysis but kept in heatmap and master_trips.csv. Current status (2026-05-25): 0 outliers flagged — return direction has high natural variance (SD 3.13 km) due to mall-detour vs direct routes.
+
+### Near-office classification
+Trips ending 150m–800m from OFFICE (outside anchor radius but plausibly office-area) get `near_office=True`. Included in heatmap and CSV but excluded from parking analysis, departure time curves, and clustering. Bidirectional: also catches trips starting in the near-office zone heading home.
 
 ---
 
 ## Full Pipeline — python main.py
 
 1. Check for new GPX files not in processed.json
-2. Parse new files: classify, merge, extract, detect stops
+2. Parse new files: classify (incl. near-office detection), merge, extract, detect stops
 3. Fetch Bluelink daily aggregates (last 4 months) → upsert to outputs/bluelink_daily.csv (silent on failure)
 4. Fetch sidecar sheet CSV fresh from sheet_csv_url in config.yaml
 5. Look up petrol price by date range from petrol_prices.csv
-6. Enrich all trips: weather (Open-Meteo, cached), sheet join, petrol price, fuel cost, derived fields
+6. Enrich all trips: weather, sheet join, petrol price, fuel cost, derived fields + distance outlier detection (2.5 SD per direction)
 7. Write enriched master_trips.csv
 8. Cluster all trips by path similarity (DBSCAN, per direction) → add route_cluster column
 9. Generate heatmap.html — Folium speed-coloured map of all trips
