@@ -185,6 +185,26 @@ Outbound and return legs are fully independent — missing one does not affect a
 
 ## Scenario Handling Reference
 
+### Outbound scenarios (Home → Office)
+
+| Scenario | GPX pattern | Walk origin | Parking | Notes |
+|---|---|---|---|---|
+| A — Parks at mall, walks to office | HOME → OFFICE (recording continued) | Walk starts near MALL (150m) | Mall | Walk truncated at mall. Most common outbound pattern |
+| B — Parks at office directly | HOME → OFFICE | No walk (or short walk <3min near OFFICE) | Office | Rare — only when office parking available |
+| C — Redirected to mall mid-trip | HOME → passes OFFICE → MALL (or OFFICE if walked) | Walk starts near MALL if walked | Sent to Mall | OFFICE mid-route detected. Walk detection same as A |
+
+**Distinguishing A from B:** where the walking-speed segment begins. Within 150m of MALL → Scenario A (parking=Mall). Within 150m of OFFICE → Scenario B (parking=Office). This 150m check is hardcoded and independent of config anchor radii.
+
+### Return scenarios (Office/Mall → Home)
+
+| Scenario | GPX pattern | Walk origin | Parking | Notes |
+|---|---|---|---|---|
+| D — Direct home, walks inside | OFFICE/MALL → beyond HOME | Walk starts near HOME (150m) | Based on start anchor | Walk truncated at HOME |
+| E — Via shooting range, forgot to pause | OFFICE/MALL → long slow period → HOME | N/A | Based on start anchor | Gap-based stop detection handles this |
+| F — Via shooting range, paused correctly | Two GPX files with gap | N/A | Based on start anchor | Merge logic or separate partials |
+
+### General scenario table
+
 | Scenario | OsmAnd action | Sheet entry | Parser behaviour |
 |---|---|---|---|
 | Normal commute | Keep recording | 2 rows | Full trip extracted |
@@ -194,24 +214,36 @@ Outbound and return legs are fully independent — missing one does not affect a
 | Shooting range / football (>30 min) | PAUSE, resume after | Normal | Stop detected, duration adjusted |
 | Forgot to pause (kept recording) | — | Normal | Gap analysis detects stop, adjusts |
 | Only one leg recorded | Record that leg | 1 row | That leg processed independently |
-| Walked to office after parking at mall | Keep recording | Normal | Walk detected, trip truncated at last vehicle speed point |
+| Walked to office after parking at mall | Keep recording | Normal | Walk detected, truncated at mall, parking=Mall |
 | WFH day | No recording | No entry | Nothing to process |
 
 ---
 
 ## Parser Logic (parser.py)
 
+### Anchor classification rules
+- OFFICE radius: 150m, MALL radius: 150m, HOME radius: 300m (no nearby conflicting anchor)
+- OFFICE-MALL separation: ~218m — radii must stay well below half this distance to avoid overlap
+- When a point falls within multiple anchor radii simultaneously, nearest anchor wins (tie-break by haversine distance)
+- Walk detection always uses a hardcoded 150m radius regardless of config anchor radius
+
 ### Walk detection and truncation (runs before classification)
-When the raw endpoint is near OFFICE or HOME and the trailing segment shows sustained walking speed (< 7 km/h for > 3 min, < 1 km distance), the trip is truncated at the last point where vehicle speed exceeded 7 km/h. The truncated endpoint is then used for all classification, distance, and duration calculations. This catches the case where the user parks at the mall and walks to the office, or parks near home and walks the last stretch, with OsmAnd still running. The 1 km distance cap prevents false positives from slow traffic crawl.
-- walk_detected = True, walk_duration_mins recorded
-- Truncation happens before anchor matching, so parking label reflects the car's actual stop point
+Scans backwards from GPX end for sustained walking speed (< 7 km/h for > 3 min, < 1 km distance). If found, checks where the walk started against all three anchors at a fixed 150m radius. If the walk origin is near an anchor, the trip is truncated at the last vehicle-speed point.
+
+Walk origin determines parking:
+- Near MALL → parked at mall, walked to office (Scenario A). Checks for Scenario C (OFFICE mid-route)
+- Near OFFICE → parked at office (Scenario B, long walk variant)
+- Near HOME → return trip, walked inside after parking (Scenario D)
+
+Fields recorded: walk_detected, walk_duration_mins, walk_origin (anchor name)
 
 ### Trip classification
-- Valid outbound  : start ~= HOME and end ~= OFFICE or MALL
-- Valid return    : start ~= OFFICE or MALL and end ~= HOME
-- Scenario C      : start ~= HOME, OFFICE coords mid-route, end ~= MALL
-- Partial trip    : end matches anchor, start does not -> partial=True, kept for heatmap
-- Unrelated trip  : no anchor match -> discarded silently
+After walk detection, the walk origin overrides the truncated endpoint anchor for classification:
+- Valid outbound  : start ~= HOME and end ~= OFFICE or MALL (or walk_origin at OFFICE/MALL)
+- Valid return    : start ~= OFFICE or MALL and end ~= HOME (or walk_origin at HOME)
+- Scenario C      : outbound with OFFICE coords mid-route, end at MALL → parking = "Sent to Mall"
+- Partial trip    : end matches anchor, start does not → partial=True, kept for heatmap
+- Unrelated trip  : no anchor match → discarded silently
 
 ### Short-stop merge logic
 Two consecutive GPX files <30 mins apart that together form valid anchor pair -> merged.

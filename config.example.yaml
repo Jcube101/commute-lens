@@ -8,12 +8,12 @@ anchors:
   office:
     lat: YOUR_OFFICE_LAT
     lon: YOUR_OFFICE_LON
-    radius_m: 300
+    radius_m: 150    # office and mall are close — keep radius well below half their separation distance. Walk detection uses 150m regardless of this setting
   mall:
     name: YOUR_MALL_NAME
     lat: YOUR_MALL_LAT
     lon: YOUR_MALL_LON
-    radius_m: 300
+    radius_m: 150    # office and mall are close — keep radius well below half their separation distance. Walk detection uses 150m regardless of this setting
 
 vehicle:
   name: YOUR_VEHICLE_NAME
