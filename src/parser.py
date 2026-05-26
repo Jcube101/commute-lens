@@ -45,6 +45,7 @@ CSV_FIELDS = [
     "point_count",
     "walk_detected",
     "walk_duration_mins",
+    "walk_origin",
 ]
 
 
@@ -323,7 +324,7 @@ def detect_stops(
 WALK_SPEED_THRESHOLD_KMH = 7.0
 WALK_MIN_DURATION_MINS = 3.0
 WALK_MAX_DISTANCE_M = 1000.0
-
+WALK_ANCHOR_RADIUS_M = 150.0
 
 WALK_GUARD_MIN_DISTANCE_KM = 10.0
 WALK_GUARD_MIN_DURATION_MIN = 20.0
@@ -334,36 +335,36 @@ NEAR_OFFICE_MAX_M = 800.0
 
 def detect_and_truncate_walk(
     points: List[TrackPoint],
-    *anchors: Anchor,
-) -> Tuple[List[TrackPoint], bool, float]:
+    home: Anchor,
+    office: Anchor,
+    mall: Anchor,
+) -> Tuple[List[TrackPoint], bool, float, Optional[str]]:
     """
-    Detect a trailing walk segment at the end of a trip.
+    Detect a trailing walk segment and truncate the trip at the parking point.
 
-    When the recorded endpoint is near any of the given anchors (OFFICE
-    or HOME) and the final segment shows sustained walking speed (< 7 km/h
-    for > 3 consecutive minutes over < 1 km), the trip is truncated at the
-    last point where vehicle speed exceeded 7 km/h.
+    Scans backwards from the GPX end for sustained walking speed (< 7 km/h
+    for > 3 min, < 1 km). If found, checks where the walk started against
+    all three anchors using a fixed 150m radius. If the walk origin is near
+    an anchor, the trip is truncated there.
 
-    The 1 km distance cap distinguishes a short walk from slow traffic crawl.
+    Walk origin determines parking:
+      - Near MALL  -> parked at mall, walked to office (Scenario A)
+      - Near OFFICE -> parked at office (Scenario B, long walk variant)
+      - Near HOME  -> return trip, walked inside after parking (Scenario D)
 
     Returns:
-      truncated_points  — points up to and including the truncation point
-      walk_detected     — True if a walk segment was found and truncated
-      walk_duration_mins — duration of the removed walk segment
+      truncated_points   — points up to the last vehicle-speed point
+      walk_detected      — True if walk was found and truncated
+      walk_duration_mins — duration of removed walk segment
+      walk_origin        — anchor name where walk started, or None
     """
     if len(points) < 10:
-        return points, False, 0.0
+        return points, False, 0.0, None
 
-    # Guard: skip walk detection on trips too short to be commutes
     duration_min = (points[-1].time - points[0].time).total_seconds() / 60.0
     if duration_min < WALK_GUARD_MIN_DURATION_MIN:
-        return points, False, 0.0
+        return points, False, 0.0, None
 
-    end = points[-1]
-    if not any(a.matches(end.lat, end.lon) for a in anchors):
-        return points, False, 0.0
-
-    # Scan backwards from the end to find the last point above walking speed
     last_vehicle_idx = len(points) - 1
     for i in range(len(points) - 1, -1, -1):
         speed = points[i].speed_kmh
@@ -372,34 +373,59 @@ def detect_and_truncate_walk(
             break
 
     if last_vehicle_idx >= len(points) - 2:
-        return points, False, 0.0
+        return points, False, 0.0, None
 
-    walk_start_time = points[last_vehicle_idx + 1].time
-    walk_end_time = points[-1].time
-    walk_duration = (walk_end_time - walk_start_time).total_seconds() / 60.0
+    walk_start_idx = last_vehicle_idx + 1
+    walk_start = points[walk_start_idx]
+    walk_duration = (points[-1].time - walk_start.time).total_seconds() / 60.0
 
     if walk_duration < WALK_MIN_DURATION_MINS:
-        return points, False, 0.0
+        return points, False, 0.0, None
 
-    walk_points = points[last_vehicle_idx + 1:]
+    walk_points = points[walk_start_idx:]
     walk_dist = sum(
         haversine(walk_points[i].lat, walk_points[i].lon,
                   walk_points[i + 1].lat, walk_points[i + 1].lon)
         for i in range(len(walk_points) - 1)
     )
     if walk_dist > WALK_MAX_DISTANCE_M:
-        return points, False, 0.0
+        return points, False, 0.0, None
+
+    walk_origin = None
+    best_dist = float("inf")
+    for anchor in [mall, office, home]:
+        dist = anchor.distance_to(walk_start.lat, walk_start.lon)
+        if dist <= WALK_ANCHOR_RADIUS_M and dist < best_dist:
+            walk_origin = anchor.name
+            best_dist = dist
+
+    if walk_origin is None:
+        return points, False, 0.0, None
 
     truncated = points[: last_vehicle_idx + 1]
     if len(truncated) < 10:
-        return points, False, 0.0
+        return points, False, 0.0, None
 
-    return truncated, True, round(walk_duration, 1)
+    return truncated, True, round(walk_duration, 1), walk_origin
 
 
 # ---------------------------------------------------------------------------
 # Trip classification
 # ---------------------------------------------------------------------------
+
+def _nearest_anchor(
+    lat: float, lon: float, *anchors: Anchor,
+) -> Optional[Anchor]:
+    """Return the nearest matching anchor, or None. Breaks ties by distance."""
+    candidates = []
+    for a in anchors:
+        if a.matches(lat, lon):
+            candidates.append((a, a.distance_to(lat, lon)))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x[1])
+    return candidates[0][0]
+
 
 def classify_trip(
     points: List[TrackPoint],
@@ -412,33 +438,38 @@ def classify_trip(
     """
     Classify a sequence of track points as a commute trip.
 
-    Classification rules (in priority order):
-      HOME → OFFICE          : valid outbound, parking = Office
-      HOME → MALL            : valid outbound, parking = Mall
-        (with OFFICE mid-route: Scenario C, parking = Sent to Mall)
-      (OFFICE|MALL) → HOME   : valid return
-      end ∈ anchor, start ∉  : partial trip (recording started late)
-      otherwise              : unrelated — return None
+    Walk detection runs first: scans backwards for a trailing walk segment,
+    checks where the walk started (which anchor at 150m), and truncates.
+    The walk origin overrides the endpoint anchor for parking classification.
 
-    Returns a dict of extracted fields, or None if unrelated.
+    Outbound scenarios (HOME -> OFFICE/MALL):
+      A: walk starts near MALL  -> parking=Mall (or Sent to Mall if Scenario C)
+      B: no walk or walk starts near OFFICE -> parking=Office
+      C: OFFICE mid-route + end at MALL -> parking=Sent to Mall
+
+    Return scenarios (OFFICE/MALL -> HOME):
+      D: walk starts near HOME -> truncate at HOME, parking from start anchor
+
+    When a point falls within multiple anchor radii, nearest wins.
     """
     if len(points) < min_points:
         return None
 
-    # Walk detection: truncate trailing walk segment before classification
-    points, walk_detected, walk_duration_mins = detect_and_truncate_walk(points, office, home)
+    points, walk_detected, walk_duration_mins, walk_origin = detect_and_truncate_walk(
+        points, home, office, mall
+    )
 
     start, end = points[0], points[-1]
 
-    start_home = home.matches(start.lat, start.lon)
-    start_office = office.matches(start.lat, start.lon)
-    start_mall = mall.matches(start.lat, start.lon)
-    end_home = home.matches(end.lat, end.lon)
-    end_office = office.matches(end.lat, end.lon)
-    end_mall = mall.matches(end.lat, end.lon)
+    start_anchor = _nearest_anchor(start.lat, start.lon, home, office, mall)
+    end_anchor = _nearest_anchor(end.lat, end.lon, home, office, mall)
 
-    start_anchor = start_home or start_office or start_mall
-    end_anchor = end_home or end_office or end_mall
+    # Walk origin overrides the truncated endpoint anchor
+    if walk_detected and walk_origin is not None:
+        for a in [home, office, mall]:
+            if a.name == walk_origin:
+                end_anchor = a
+                break
 
     direction: Optional[str] = None
     parking: Optional[str] = None
@@ -446,61 +477,63 @@ def classify_trip(
     near_office = False
     scenario_c = False
 
-    # Check near-office zone (outside anchor radius but plausibly office-area)
+    def _is(anchor: Optional[Anchor], name: str) -> bool:
+        return anchor is not None and anchor.name == name
+
     end_near_office = (
-        not end_office and not end_mall
+        end_anchor is None
         and NEAR_OFFICE_MIN_M < office.distance_to(end.lat, end.lon) <= NEAR_OFFICE_MAX_M
     )
     start_near_office = (
-        not start_office and not start_mall
+        start_anchor is None
         and NEAR_OFFICE_MIN_M < office.distance_to(start.lat, start.lon) <= NEAR_OFFICE_MAX_M
     )
 
-    if start_home and end_office:
-        direction, parking = "Home to Office", "Office"
-
-    elif start_home and end_mall:
-        # Scenario C: did the route pass through OFFICE mid-trip?
+    def _resolve_mall_parking() -> str:
+        nonlocal scenario_c
         scenario_c = any(office.matches(p.lat, p.lon) for p in points[1:-1])
-        direction = "Home to Office"
-        parking = "Sent to Mall" if scenario_c else "Mall"
+        return "Sent to Mall" if scenario_c else "Mall"
 
-    elif (start_office or start_mall) and end_home:
-        direction = "Office to Home"
-        if start_office and start_mall:
-            # Both anchors within radius — pick the closer one
-            parking = (
-                "Office"
-                if office.distance_to(start.lat, start.lon) < mall.distance_to(start.lat, start.lon)
-                else "Mall"
-            )
-        else:
-            parking = "Office" if start_office else "Mall"
+    # ---- OUTBOUND: start at HOME ----
+    if _is(start_anchor, "HOME"):
+        if _is(end_anchor, "OFFICE"):
+            direction, parking = "Home to Office", "Office"
+        elif _is(end_anchor, mall.name):
+            direction = "Home to Office"
+            parking = _resolve_mall_parking()
+        elif end_near_office:
+            near_office = True
+            direction, parking = "Home to Office", "Near Office"
 
-    elif start_home and end_near_office:
-        # Near-office: ended close to office area but outside anchor radius
+    # ---- RETURN: end at HOME ----
+    elif _is(end_anchor, "HOME"):
+        if _is(start_anchor, "OFFICE"):
+            direction, parking = "Office to Home", "Office"
+        elif _is(start_anchor, mall.name):
+            direction, parking = "Office to Home", "Mall"
+        elif start_near_office:
+            near_office = True
+            direction, parking = "Office to Home", "Near Office"
+        elif start_anchor is None:
+            partial = True
+            direction, parking = "Office to Home", "Unknown"
+
+    # ---- PARTIAL: end matches non-HOME anchor, start not HOME ----
+    elif (end_anchor is not None and not _is(end_anchor, "HOME")
+          and not _is(start_anchor, "HOME")):
+        partial = True
+        if _is(end_anchor, "OFFICE"):
+            direction, parking = "Home to Office", "Office"
+        elif _is(end_anchor, mall.name):
+            direction, parking = "Home to Office", "Mall"
+
+    elif end_near_office and not _is(start_anchor, "HOME"):
+        partial = True
         near_office = True
         direction, parking = "Home to Office", "Near Office"
 
-    elif (start_near_office or start_office or start_mall) and end_home:
-        if not (start_office or start_mall):
-            # Started from near-office zone, not exact anchor
-            near_office = True
-        direction = "Office to Home"
-        parking = "Near Office" if near_office else parking
-
-    elif end_anchor and not start_anchor:
-        # Partial: recording didn't begin at an anchor (e.g. forgot to start at home)
-        partial = True
-        if end_home:
-            direction, parking = "Office to Home", "Unknown"
-        elif end_office:
-            direction, parking = "Home to Office", "Office"
-        else:  # end_mall
-            direction, parking = "Home to Office", "Mall"
-
-    else:
-        return None  # unrelated
+    if direction is None:
+        return None
 
     departure_ist = points[0].time.astimezone(IST)
     arrival_ist = points[-1].time.astimezone(IST)
@@ -512,7 +545,7 @@ def classify_trip(
     adjusted_duration_mins = round(duration_min - stop_duration_mins, 1)
 
     return {
-        "filename": None,  # filled by caller
+        "filename": None,
         "date": departure_ist.date().isoformat(),
         "direction": direction,
         "departure_time": departure_ist.strftime("%Y-%m-%d %H:%M:%S %Z"),
@@ -530,7 +563,8 @@ def classify_trip(
         "point_count": len(points),
         "walk_detected": walk_detected,
         "walk_duration_mins": walk_duration_mins,
-        "points": points,  # retained in memory for heatmap; excluded from CSV
+        "walk_origin": walk_origin or "",
+        "points": points,
     }
 
 

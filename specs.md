@@ -44,6 +44,7 @@ One row per classified trip. All fields are strings in the CSV.
 | `point_count` | int | GPX parse | Number of track points in the trip (after walk truncation if applicable) |
 | `walk_detected` | bool | Walk detector | True if a trailing walk segment was truncated |
 | `walk_duration_mins` | float | Walk detector | Duration of the removed walk segment |
+| `walk_origin` | str | Walk detector | Anchor name where walk started (e.g. "Nexus Mall Koramangala", "OFFICE", "HOME") |
 
 ### Enrichment fields (added by main.py)
 
@@ -80,12 +81,12 @@ anchors:
   office:
     lat: <float>
     lon: <float>
-    radius_m: 300
+    radius_m: 150           # keep well below half OFFICE-MALL separation (~218m)
   mall:
     name: <string>
     lat: <float>
     lon: <float>
-    radius_m: 300
+    radius_m: 150           # keep well below half OFFICE-MALL separation (~218m)
 
 vehicle:
   name: <string>
@@ -148,17 +149,41 @@ class Anchor:
 
 Haversine formula used throughout for great-circle distance in metres.
 
-**Tie-breaking:** When a start/end point falls within the radius of both OFFICE and MALL (they are geographically close), the anchor with the smaller `distance_to` value wins.
+**Radii:** HOME 300m (no nearby conflicting anchor), OFFICE 150m, MALL 150m. OFFICE-MALL separation is ~218m — radii must stay well below half the separation distance to prevent overlap-driven misclassification.
+
+**Tie-breaking:** When a point falls within the radius of both OFFICE and MALL (rare at 150m but possible), `_nearest_anchor()` picks the anchor with the smallest `distance_to` value.
 
 ---
 
-## Trip classification rules (in priority order)
+## Trip classification rules
+
+Walk detection runs first: scans backwards for a trailing walk segment, checks where the walk started (which anchor at a fixed 150m radius), and truncates. The walk origin overrides the endpoint anchor.
+
+### Outbound scenarios (HOME → OFFICE/MALL)
+
+| Scenario | Detection | Parking |
+|---|---|---|
+| A — Parks at mall, walks to office | Walk starts within 150m of MALL | Mall (or Sent to Mall if Scenario C) |
+| B — Parks at office directly | No walk, or walk starts within 150m of OFFICE | Office |
+| C — Redirected to mall | OFFICE coords appear mid-route, end at MALL | Sent to Mall |
+
+### Return scenarios (OFFICE/MALL → HOME)
+
+| Scenario | Detection | Parking |
+|---|---|---|
+| D — Direct home, walks inside | Walk starts within 150m of HOME | From start anchor (Office or Mall) |
+| E — Via shooting range, forgot to pause | Gap-based stop detection | From start anchor |
+| F — Via shooting range, paused correctly | Merge logic or separate partials | From start anchor |
+
+### Classification priority
 
 ```
+start ~= HOME  and  walk_origin ~= MALL        -> "Home to Office",  parking from walk (+ Scenario C check)
+start ~= HOME  and  walk_origin ~= OFFICE      -> "Home to Office",  parking="Office"
 start ~= HOME  and  end ~= OFFICE              -> "Home to Office",  parking="Office"
-start ~= HOME  and  end ~= MALL                -> "Home to Office",  parking="Mall"
-  (with OFFICE coords appearing mid-route)     -> Scenario C,        parking="Sent to Mall"
-start ~= OFFICE or MALL  and  end ~= HOME      -> "Office to Home",  parking=start anchor
+start ~= HOME  and  end ~= MALL                -> "Home to Office",  parking="Mall" (+ Scenario C check)
+start ~= HOME  and  end near-office zone        -> "Home to Office",  parking="Near Office"
+(OFFICE|MALL) and  end ~= HOME                 -> "Office to Home",  parking=start anchor
 end ~= anchor  and  start not ~= any anchor    -> partial=True,      direction inferred from end
 no anchor match at either end                  -> discard (None returned)
 ```
@@ -180,15 +205,29 @@ All four conditions must hold simultaneously. Configurable via `thresholds.stop_
 
 ## Walk detection parameters
 
-Runs **before** trip classification. Detects trailing walk segments on trips whose raw endpoint is near OFFICE or HOME — handles the case where the user parks and walks the last stretch with OsmAnd still running.
+Runs **before** trip classification. Scans backwards from GPX end for a trailing walk segment, then checks where the walk started against all three anchors (HOME, OFFICE, MALL) at a fixed 150m radius. The walk origin determines parking and overrides the truncated endpoint anchor.
 
 | Parameter | Default | Meaning |
 |---|---|---|
 | `WALK_SPEED_THRESHOLD_KMH` | 7.0 | Maximum speed to classify as walking |
 | `WALK_MIN_DURATION_MINS` | 3.0 | Minimum walk duration to trigger truncation |
 | `WALK_MAX_DISTANCE_M` | 1000.0 | Maximum walk distance — filters out slow traffic crawl |
+| `WALK_ANCHOR_RADIUS_M` | 150.0 | Fixed radius for walk origin anchor check — independent of config radii |
+| `WALK_GUARD_MIN_DURATION_MIN` | 20.0 | Minimum trip duration before walk detection runs |
 
-All three conditions must hold: speed below threshold, duration above minimum, distance below maximum. The endpoint must be near OFFICE or HOME for detection to trigger. When triggered, the trip is truncated at the last point where vehicle speed exceeded 7 km/h. The truncated endpoint is used for classification (parking label), distance, and duration. Fields `walk_detected` and `walk_duration_mins` are recorded.
+Walk detection fires when ALL conditions hold:
+1. Trip has ≥10 points and ≥20 minutes duration
+2. Trailing segment has sustained speed < 7 km/h
+3. Walk duration > 3 minutes
+4. Walk distance < 1 km (distinguishes walk from slow traffic)
+5. Walk start point is within 150m of at least one anchor
+
+When multiple anchors are within 150m, the nearest wins. Walk origin determines parking:
+- Near MALL → parking = Mall (Scenario A) or Sent to Mall (if Scenario C)
+- Near OFFICE → parking = Office (Scenario B, long walk variant)
+- Near HOME → truncate at home (Scenario D), parking from start anchor
+
+Fields recorded: `walk_detected`, `walk_duration_mins`, `walk_origin` (anchor name).
 
 ---
 
