@@ -57,7 +57,9 @@
 - [x] Near-office classification: 150m–800m from OFFICE → included in heatmap, excluded from stats
 - [x] Partial trip filter: ≥10 km AND ≥20 min minimum, otherwise discarded
 - [x] Malformed file dedup: skipped files added to processed.json, warning once only
-- [x] Current counts (2026-05-25): 34 trips (21 full commute + 12 partial + 1 flagged), 30 discarded
+- [x] MALL preference for ambiguous walk origins: when MALL and OFFICE distances are within 55m, prefer MALL (parking prior: 12:3 ratio)
+- [x] Named waypoints for stop location enrichment: `waypoints` section in config.yaml, `stop_location` field in master_trips.csv. 7 stops matched to Shooting Range
+- [x] Current counts (2026-05-27): 34 trips (22 full commute + 11 partial + 1 flagged), 30 discarded
 
 ---
 
@@ -65,7 +67,7 @@
 
 **Goal:** Make this presentable as a portfolio project without exposing personal location data.
 
-**Status:** 21 full commute trips as of 2026-05-25. Need ~19 more full trips at current pace (~10-12/month from weekday commutes).
+**Status:** 22 full commute trips as of 2026-05-27. Need ~18 more full trips at current pace (~10-12/month from weekday commutes).
 
 ### Synthetic demo mode (`generate_demo.py`)
 

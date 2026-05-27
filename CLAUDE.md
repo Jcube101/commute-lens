@@ -88,7 +88,7 @@ tripDrvTime (min), tripIdleTime (min), tripDist (km), tripAvgSpeed (km/h), tripM
 - Gap-based stop detection confirmed: 8 stops correctly detected across 41 trips (longest: 95.3 min)
 - Walk detection: trailing walk segments (< 7 km/h for > 3 min, < 1 km) auto-truncated from trips ending near OFFICE or HOME. Endpoint reclassified after truncation. Fields: walk_detected, walk_duration_mins
 - Compound cases confirmed working: Scenario C + walk + long stop all detected independently on same trip (May 18, May 19)
-- As of 2026-05-25: 67 GPX files, 34 classified trips (22 full, 12 partial), 30 discarded (includes 7 filtered sub-threshold partials), 1 malformed
+- As of 2026-05-27: 67 GPX files, 34 classified trips (22 full, 11 partial, 1 flagged), 30 discarded (includes 7 filtered sub-threshold partials), 1 malformed
 
 ### GPX file transfer method (manual, weekly)
 - Android 13+ blocks access to Android/data/ from Files app

@@ -15,7 +15,7 @@ It is designed around a real commute with unusual geometry: three anchor points 
 
 | Output | Description |
 |---|---|
-| `master_trips.csv` | One row per trip — GPS-derived fields plus weather, mileage, fuel cost, sheet notes |
+| `master_trips.csv` | One row per trip — GPS-derived fields plus weather, mileage, fuel cost, stop locations, sheet notes |
 | `heatmap.html` | Speed-coloured road segments, green to red, built from all classified trips |
 | `dashboard.html` | Departure time buckets, route comparison, weekly trends, fuel cost breakdown |
 
@@ -78,6 +78,8 @@ Consecutive GPX files with a gap under 30 minutes are merged before classificati
 
 When a trip's recorded endpoint is near OFFICE or HOME and the final segment shows sustained walking speed (< 7 km/h for > 3 minutes over < 1 km), the parser truncates the trip at the last point where vehicle speed exceeded 7 km/h. This handles the common case of parking at the mall and walking to the office with OsmAnd still recording. The truncated endpoint is used for all classification, distance, and duration calculations. The 1 km distance cap filters out slow traffic crawl that would otherwise trigger false positives.
 
+When the walk origin falls within range of both MALL and OFFICE (which are only ~218m apart), and the distances are within 55m of each other, MALL is preferred — reflecting the real-world parking prior (mall parking is 4x more frequent than office parking).
+
 ### Mid-trip stop detection
 
 OsmAnd uses displacement-based recording: when the car is stationary, the GPS simply stops logging. A stop appears as a time gap between two points at nearly the same coordinates — not as a sequence of slow-speed readings.
@@ -90,6 +92,10 @@ A gap is flagged as a stop when all four conditions hold:
 - Midpoint is not within any anchor radius
 
 This correctly strips a 65-minute shooting range stop from the raw 177-minute trip duration, producing a clean 112-minute adjusted figure.
+
+### Stop location enrichment
+
+Detected stops are matched against named waypoints defined in `config.yaml`. If a stop falls within a waypoint's radius, the `stop_location` field is populated with the waypoint name (e.g. "Shooting Range"). Waypoints also detect dwell time for suspected unreported stops — trips where the user forgot to pause recording. Waypoints enrich stop analysis without affecting trip classification.
 
 ---
 
@@ -111,6 +117,7 @@ cp config.example.yaml config.yaml
 
 Edit `config.yaml` and fill in:
 - Your home, office, and mall coordinates
+- (Optional) Waypoints for regular stops (shooting range, gym, etc.) — enriches stop detection without affecting trip classification
 - Your vehicle name and ARAI fuel economy baseline
 - Your Google Sheet CSV export URL (`sheet_csv_url`)
 - (Optional) Hyundai Bluelink credentials — fetches daily trip aggregates automatically
@@ -163,7 +170,7 @@ The interactive explorer lets you select a profile, toggle departure window and 
 
 ## Data privacy
 
-`config.yaml`, `data/gpx/`, and `outputs/` are all gitignored. Your coordinates, routes, and sheet URL never leave your machine. The portfolio demo uses only synthetic data on public road geometry — no personal locations are ever published.
+`config.yaml`, `data/gpx/`, and `outputs/` are all gitignored. Your coordinates, routes, waypoints, and sheet URL never leave your machine. The portfolio demo uses only synthetic data on public road geometry — no personal locations are ever published.
 
 ---
 

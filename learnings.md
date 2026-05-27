@@ -208,6 +208,32 @@ With a paused recording, the gap between the last pre-stop point and the first p
 
 ---
 
+## Ambiguous walk origins need a parking prior, not just nearest-anchor
+
+**What broke:** The April 21 outbound trip was classified as `parking=Office` when the user actually parked at the mall. Walk detection correctly identified a trailing walk segment, but the walk origin point was 97.1m from OFFICE and 149.0m from MALL — both within the 150m walk anchor radius. Nearest-anchor tiebreaking picked OFFICE.
+
+**Why nearest-anchor was wrong:** OFFICE and MALL are only ~218m apart. Any walk origin in the overlap zone between their 150m radii is genuinely ambiguous from GPS data alone. But the user parks at the mall ~80% of the time (12 out of 15 trips) — the prior is heavily MALL-biased.
+
+**Fix:** When MALL and OFFICE walk-origin distances are within 55m of each other, prefer MALL. The 55m threshold (slightly above the observed 51.9m difference) accounts for GPS coordinate jitter at the boundary. This is a real-world prior encoded as a tiebreaker, not a hack — it reflects the actual parking distribution.
+
+**Why this matters:** When two anchors are very close, pure distance-based tiebreaking produces classification noise that worsens as more trips land in the overlap zone. A prior based on observed behaviour makes the correct call for the vast majority of ambiguous cases. The fix is specific to the MALL-OFFICE pair because they have the unusual geometry (218m separation with 150m match radii).
+
+---
+
+## Named waypoints turn anonymous stops into actionable data
+
+**What I built:** A `waypoints` section in `config.yaml` that defines named locations (shooting range, gym, etc.) with coordinates and a match radius. The stop detector checks whether each detected stop falls within a waypoint's radius and populates a `stop_location` field in `master_trips.csv`.
+
+**Why:** Gap-based stop detection correctly identified stops, but the output was just `stop_detected=True` with a duration — no location context. Looking at `master_trips.csv`, you could see "this trip had a 65-minute stop" but not *where*. For commute analysis, knowing the stop was at the shooting range vs an unexpected traffic jam vs a friend's place matters.
+
+**Design choice — waypoints are separate from anchors:** Anchors (HOME, OFFICE, MALL) affect trip classification — they determine direction, parking, and whether a trip is valid. Waypoints only enrich stop metadata. A shooting range waypoint doesn't change whether a trip is "Home to Office" — it just adds context to the stop. This separation is important because adding a waypoint should never change existing trip classifications.
+
+**Dwell-time detection for unreported stops:** Beyond gap-based stops, the parser also checks whether the trip spent >=10 minutes near any waypoint. This catches "suspected unreported stops" where the user forgot to pause OsmAnd — no clean gap exists, but the trip clearly passed through a waypoint area with significant dwell time.
+
+**Results:** 7 stops across return trips now show `stop_location=Shooting Range`. Zero "Unknown" stops — every detected gap-based stop matched a waypoint.
+
+---
+
 ## Bluelink API does not provide per-trip mileage for India
 
 **What I tested:** `hyundai_kia_connect_api` v4.10.3 with region=6 (India), brand=2 (Hyundai), against a Hyundai Exter AMT registered Dec 2024.

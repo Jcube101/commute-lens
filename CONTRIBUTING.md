@@ -72,6 +72,16 @@ anchors:
     lon: <lon>
     radius_m: 300
 
+# Optional — add any regular stops (shooting range, gym, club) as waypoints.
+# They enrich stop detection without affecting trip classification.
+# waypoints:
+#   shooting_range:
+#     name: Shooting Range
+#     lat: <lat>
+#     lon: <lon>
+#     radius_m: 200
+#     type: recreational_stop
+
 vehicle:
   name: <your car>
   arai_kmpl: <official ARAI fuel economy>
@@ -95,7 +105,7 @@ paths:
 #   pin: <your Bluelink PIN>
 ```
 
-`config.yaml` is gitignored — your personal data stays local. Bluelink credentials are optional — the pipeline runs without them.
+`config.yaml` is gitignored — your personal data stays local. Waypoints and Bluelink credentials are optional — the pipeline runs without them.
 
 ---
 
