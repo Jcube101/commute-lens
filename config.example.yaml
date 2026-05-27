@@ -15,6 +15,16 @@ anchors:
     lon: YOUR_MALL_LON
     radius_m: 150    # office and mall are close — keep radius well below half their separation distance. Walk detection uses 150m regardless of this setting
 
+# Add any regular stops (shooting range, gym, club) as waypoints — they enrich
+# stop detection without affecting trip classification.
+waypoints:
+  shooting_range:
+    name: Shooting Range
+    lat: YOUR_WAYPOINT_LAT
+    lon: YOUR_WAYPOINT_LON
+    radius_m: 200
+    type: recreational_stop
+
 vehicle:
   name: YOUR_VEHICLE_NAME
   arai_kmpl: 19.2

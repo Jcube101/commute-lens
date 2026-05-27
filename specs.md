@@ -40,6 +40,7 @@ One row per classified trip. All fields are strings in the CSV.
 | `scenario_c` | bool | Mid-route OFFICE match | True if OFFICE coordinates appear mid-route before MALL endpoint |
 | `stop_detected` | bool | Gap detector | True if at least one mid-trip stop was flagged |
 | `stop_duration_mins` | float | Gap detector | Sum of all detected stop durations |
+| `stop_location` | str | Gap detector + waypoints | Named waypoint if stop falls within a waypoint radius, "Unknown" if stop detected but no match, empty if no stop |
 | `adjusted_duration_mins` | float | duration - stop | Driving time net of detected stops |
 | `point_count` | int | GPX parse | Number of track points in the trip (after walk truncation if applicable) |
 | `walk_detected` | bool | Walk detector | True if a trailing walk segment was truncated |
@@ -87,6 +88,14 @@ anchors:
     lat: <float>
     lon: <float>
     radius_m: 150           # keep well below half OFFICE-MALL separation (~218m)
+
+waypoints:                          # optional — enrich stop detection without affecting classification
+  <key>:
+    name: <string>                  # display name for stop_location field
+    lat: <float>
+    lon: <float>
+    radius_m: <int>                 # match radius (default 200m)
+    type: <string>                  # e.g. "recreational_stop" (informational)
 
 vehicle:
   name: <string>
@@ -222,7 +231,7 @@ Walk detection fires when ALL conditions hold:
 4. Walk distance < 1 km (distinguishes walk from slow traffic)
 5. Walk start point is within 150m of at least one anchor
 
-When multiple anchors are within 150m, the nearest wins. Walk origin determines parking:
+When multiple anchors are within 150m, the nearest wins — except when MALL and OFFICE distances are within 55m of each other, in which case MALL is preferred (real-world parking prior: 12:3 MALL vs OFFICE ratio). Walk origin determines parking:
 - Near MALL → parking = Mall (Scenario A) or Sent to Mall (if Scenario C)
 - Near OFFICE → parking = Office (Scenario B, long walk variant)
 - Near HOME → truncate at home (Scenario D), parking from start anchor

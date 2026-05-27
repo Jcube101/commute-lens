@@ -29,12 +29,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 from parser import (  # noqa: E402
     CSV_FIELDS,
     build_anchors,
+    build_waypoints,
     load_config,
     load_processed,
     parse_trips_incremental,
     print_summary,
     save_processed,
     write_csv_incremental,
+    _match_waypoint,
 )
 from bluelink import fetch_bluelink_daily  # noqa: E402
 from cluster import run_clustering  # noqa: E402
@@ -372,10 +374,15 @@ def detect_unreported_stops(rows: List[Dict]) -> int:
                     and effective_speed < UNREPORTED_STOP_MAX_EFFECTIVE_SPEED_KMH
                     and not stop_detected):
                 r["suspected_unreported_stop"] = "True"
+                location = r.get("stop_location", "")
+                if location and location != "Unknown":
+                    location_prefix = f"suspected unreported stop at {location}"
+                else:
+                    location_prefix = "suspected unreported stop"
                 r["suspected_stop_reason"] = (
-                    f"duration anomaly ({dur:.0f} min vs mean {mean_dur:.0f} min, "
-                    f"{z_score:.1f} SD) with effective speed {effective_speed:.1f} km/h, "
-                    f"no gap detected"
+                    f"{location_prefix} "
+                    f"(effective speed {effective_speed:.1f} km/h, "
+                    f"{z_score:.1f} SD above mean)"
                 )
                 print(
                     f"  WARNING: Trip on {r.get('date')} {direction} flagged as "
@@ -434,6 +441,7 @@ if __name__ == "__main__":
 
     cfg = load_config(str(config_path))
     home, office, mall = build_anchors(cfg)
+    waypoints = build_waypoints(cfg)
 
     paths = cfg["paths"]
     gpx_dir = repo_root / paths["gpx_dir"]
@@ -463,6 +471,7 @@ if __name__ == "__main__":
         new_trips, discarded, touched_filesets = parse_trips_incremental(
             str(gpx_dir), home, office, mall,
             min_points, merge_gap, processed_files, stop_min_minutes,
+            waypoints=waypoints,
         )
         print_summary(new_trips, discarded)
         write_csv_incremental(new_trips, str(output_csv), touched_filesets)
