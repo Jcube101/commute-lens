@@ -41,6 +41,7 @@ CSV_FIELDS = [
     "scenario_c",
     "stop_detected",
     "stop_duration_mins",
+    "stop_location",
     "adjusted_duration_mins",
     "point_count",
     "walk_detected",
@@ -76,6 +77,23 @@ class Anchor:
         self.lat = lat
         self.lon = lon
         self.radius_m = radius_m
+
+    def matches(self, lat: float, lon: float) -> bool:
+        return haversine(self.lat, self.lon, lat, lon) <= self.radius_m
+
+    def distance_to(self, lat: float, lon: float) -> float:
+        return haversine(self.lat, self.lon, lat, lon)
+
+
+class Waypoint:
+    """A named waypoint for stop location enrichment (does not affect classification)."""
+
+    def __init__(self, name: str, lat: float, lon: float, radius_m: float, wp_type: str = ""):
+        self.name = name
+        self.lat = lat
+        self.lon = lon
+        self.radius_m = radius_m
+        self.wp_type = wp_type
 
     def matches(self, lat: float, lon: float) -> bool:
         return haversine(self.lat, self.lon, lat, lon) <= self.radius_m
@@ -125,6 +143,20 @@ def build_anchors(cfg: dict) -> Tuple[Anchor, Anchor, Anchor]:
         a["mall"]["name"], a["mall"]["lat"], a["mall"]["lon"], a["mall"]["radius_m"]
     )
     return home, office, mall
+
+
+def build_waypoints(cfg: dict) -> List['Waypoint']:
+    wps = cfg.get("waypoints", {})
+    result = []
+    for key, val in wps.items():
+        result.append(Waypoint(
+            name=val.get("name", key),
+            lat=val["lat"],
+            lon=val["lon"],
+            radius_m=val.get("radius_m", 200),
+            wp_type=val.get("type", ""),
+        ))
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -269,7 +301,8 @@ def detect_stops(
     stop_min_minutes: float = 20.0,
     max_displacement_m: float = 150.0,
     max_entry_speed_kmh: float = 15.0,
-) -> Tuple[bool, float]:
+    waypoints: Optional[List['Waypoint']] = None,
+) -> Tuple[bool, float, str]:
     """
     Detect mid-trip stationary stops in OsmAnd GPX data.
 
@@ -284,9 +317,10 @@ def detect_stops(
       3. Entry speed      < max_entry_speed_kmh (15 km/h — car was slowing, not cruising)
       4. Midpoint location is not within any anchor radius
 
-    Returns (stop_detected, total_stop_duration_minutes).
+    Returns (stop_detected, total_stop_duration_minutes, stop_location).
     """
     total_stop_mins = 0.0
+    stop_locations: List[str] = []
 
     for i in range(len(points) - 1):
         p1, p2 = points[i], points[i + 1]
@@ -295,15 +329,12 @@ def detect_stops(
         if gap_min < stop_min_minutes:
             continue
 
-        # Guard: if the car was clearly moving before the gap it's a recording outage
         if p1.speed_kmh is not None and p1.speed_kmh > max_entry_speed_kmh:
             continue
 
-        # Car must not have moved significantly during the gap
         if haversine(p1.lat, p1.lon, p2.lat, p2.lon) > max_displacement_m:
             continue
 
-        # Stop must be away from all anchor points
         mid_lat = (p1.lat + p2.lat) / 2
         mid_lon = (p1.lon + p2.lon) / 2
         if (home.matches(mid_lat, mid_lon)
@@ -313,8 +344,51 @@ def detect_stops(
 
         total_stop_mins += gap_min
 
+        location = _match_waypoint(mid_lat, mid_lon, waypoints)
+        if location and location not in stop_locations:
+            stop_locations.append(location)
+
     stop_detected = total_stop_mins > 0
-    return stop_detected, round(total_stop_mins, 1)
+    stop_location = "; ".join(stop_locations) if stop_locations else ("Unknown" if stop_detected else "")
+    return stop_detected, round(total_stop_mins, 1), stop_location
+
+
+def _match_waypoint(
+    lat: float, lon: float, waypoints: Optional[List['Waypoint']] = None,
+) -> Optional[str]:
+    """Return the name of the nearest matching waypoint, or None."""
+    if not waypoints:
+        return None
+    best_name = None
+    best_dist = float("inf")
+    for wp in waypoints:
+        if wp.matches(lat, lon):
+            d = wp.distance_to(lat, lon)
+            if d < best_dist:
+                best_name = wp.name
+                best_dist = d
+    return best_name
+
+
+WAYPOINT_DWELL_MIN_MINUTES = 10.0
+
+
+def _detect_waypoint_dwell(
+    points: List[TrackPoint],
+    waypoints: List['Waypoint'],
+) -> Optional[str]:
+    """Check if the trip spent significant time near any waypoint (>=10 min)."""
+    wp_times: Dict[str, float] = {}
+    for i in range(len(points) - 1):
+        p1, p2 = points[i], points[i + 1]
+        mid_lat = (p1.lat + p2.lat) / 2
+        mid_lon = (p1.lon + p2.lon) / 2
+        name = _match_waypoint(mid_lat, mid_lon, waypoints)
+        if name:
+            seg_min = (p2.time - p1.time).total_seconds() / 60.0
+            wp_times[name] = wp_times.get(name, 0.0) + seg_min
+    matches = [n for n, t in wp_times.items() if t >= WAYPOINT_DWELL_MIN_MINUTES]
+    return "; ".join(matches) if matches else None
 
 
 # ---------------------------------------------------------------------------
@@ -325,6 +399,7 @@ WALK_SPEED_THRESHOLD_KMH = 7.0
 WALK_MIN_DURATION_MINS = 3.0
 WALK_MAX_DISTANCE_M = 1000.0
 WALK_ANCHOR_RADIUS_M = 150.0
+WALK_AMBIGUOUS_THRESHOLD_M = 55.0
 
 WALK_GUARD_MIN_DISTANCE_KM = 10.0
 WALK_GUARD_MIN_DURATION_MIN = 20.0
@@ -393,14 +468,25 @@ def detect_and_truncate_walk(
 
     walk_origin = None
     best_dist = float("inf")
+    anchor_distances = {}
     for anchor in [mall, office, home]:
         dist = anchor.distance_to(walk_start.lat, walk_start.lon)
-        if dist <= WALK_ANCHOR_RADIUS_M and dist < best_dist:
-            walk_origin = anchor.name
-            best_dist = dist
+        if dist <= WALK_ANCHOR_RADIUS_M:
+            anchor_distances[anchor.name] = dist
+            if dist < best_dist:
+                walk_origin = anchor.name
+                best_dist = dist
 
     if walk_origin is None:
         return points, False, 0.0, None
+
+    # When MALL and OFFICE are both in range and within 50m of each other,
+    # prefer MALL — real-world parking prior is heavily MALL-biased
+    if (mall.name in anchor_distances and "OFFICE" in anchor_distances
+            and abs(anchor_distances[mall.name] - anchor_distances["OFFICE"])
+            <= WALK_AMBIGUOUS_THRESHOLD_M):
+        walk_origin = mall.name
+        best_dist = anchor_distances[mall.name]
 
     truncated = points[: last_vehicle_idx + 1]
     if len(truncated) < 10:
@@ -434,6 +520,7 @@ def classify_trip(
     mall: Anchor,
     min_points: int = 10,
     stop_min_minutes: float = 20.0,
+    waypoints: Optional[List['Waypoint']] = None,
 ) -> Optional[Dict]:
     """
     Classify a sequence of track points as a commute trip.
@@ -539,10 +626,18 @@ def classify_trip(
     arrival_ist = points[-1].time.astimezone(IST)
     duration_min = (points[-1].time - points[0].time).total_seconds() / 60.0
 
-    stop_detected, stop_duration_mins = detect_stops(
-        points, home, office, mall, stop_min_minutes=stop_min_minutes
+    stop_detected, stop_duration_mins, stop_location = detect_stops(
+        points, home, office, mall, stop_min_minutes=stop_min_minutes,
+        waypoints=waypoints,
     )
     adjusted_duration_mins = round(duration_min - stop_duration_mins, 1)
+
+    # For trips without a gap-based stop, check if significant dwell time
+    # was spent near any waypoint (catches suspected unreported stops)
+    if not stop_location and waypoints:
+        wp_dwell = _detect_waypoint_dwell(points, waypoints)
+        if wp_dwell:
+            stop_location = wp_dwell
 
     return {
         "filename": None,
@@ -559,6 +654,7 @@ def classify_trip(
         "scenario_c": scenario_c,
         "stop_detected": stop_detected,
         "stop_duration_mins": stop_duration_mins,
+        "stop_location": stop_location,
         "adjusted_duration_mins": adjusted_duration_mins,
         "point_count": len(points),
         "walk_detected": walk_detected,
@@ -580,6 +676,7 @@ def parse_trips(
     min_points: int = 10,
     merge_gap_minutes: int = 30,
     stop_min_minutes: float = 20.0,
+    waypoints: Optional[List['Waypoint']] = None,
 ) -> Tuple[List[Dict], List[Tuple[List[str], str]]]:
     """
     Full parse pipeline: read → sort → merge → classify.
@@ -595,7 +692,7 @@ def parse_trips(
     discarded: List[Tuple[List[str], str]] = []
 
     for names, points in groups:
-        result = classify_trip(points, home, office, mall, min_points, stop_min_minutes)
+        result = classify_trip(points, home, office, mall, min_points, stop_min_minutes, waypoints)
         if result is None:
             discarded.append((names, "unrelated - no anchor match"))
         else:
@@ -711,6 +808,7 @@ def parse_trips_incremental(
     merge_gap_minutes: int,
     processed_files: Set[str],
     stop_min_minutes: float = 20.0,
+    waypoints: Optional[List['Waypoint']] = None,
 ) -> Tuple[List[Dict], List[Tuple[List[str], str]], List[Set[str]]]:
     """
     Like parse_trips but skips groups where every constituent file is already
@@ -741,7 +839,7 @@ def parse_trips_incremental(
         # At least one new file in this group
         touched_filesets.append(names_set)
 
-        result = classify_trip(points, home, office, mall, min_points, stop_min_minutes)
+        result = classify_trip(points, home, office, mall, min_points, stop_min_minutes, waypoints)
         if result is None:
             discarded.append((names, "unrelated - no anchor match"))
         else:

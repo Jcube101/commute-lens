@@ -119,6 +119,7 @@ All of the following are in config.yaml — gitignored, never leaves local machi
 - HOME coordinates
 - OFFICE coordinates
 - MALL name and coordinates
+- Waypoints (e.g. shooting range) — enrich stop analysis without affecting trip classification
 - Google Sheet CSV URL (sheet_csv_url)
 - Bluelink credentials (username, password, pin) — optional
 
@@ -234,6 +235,7 @@ Walk origin determines parking:
 - Near MALL → parked at mall, walked to office (Scenario A). Checks for Scenario C (OFFICE mid-route)
 - Near OFFICE → parked at office (Scenario B, long walk variant)
 - Near HOME → return trip, walked inside after parking (Scenario D)
+- **Ambiguity rule:** when MALL and OFFICE distances are within 55m of each other, MALL is preferred (parking prior: 12:3 ratio). Fixes misclassification for walk origins in the overlap zone between the two close anchors
 
 Fields recorded: walk_detected, walk_duration_mins, walk_origin (anchor name)
 
@@ -251,8 +253,10 @@ Re-merge: if new file is adjacent to already-processed file, old CSV row replace
 
 ### Mid-trip stop detection
 Timestamp gap > 20 min + displacement < 150m + entry speed < 15 km/h + not at any anchor:
-- stop_detected = True, stop_duration_mins, adjusted_duration_mins recorded
+- stop_detected = True, stop_duration_mins, stop_location, adjusted_duration_mins recorded
 - Gap-based detection is correct — OsmAnd stops logging when parked (no speed=0 run)
+- **Waypoint matching:** detected stops are checked against waypoints in config.yaml. If stop midpoint falls within a waypoint radius, `stop_location` = waypoint name; otherwise "Unknown". Waypoints also checked via dwell-time analysis (>=10 min near waypoint) to catch unreported stops
+- As of 2026-05-27: 7 stops matched to "Shooting Range" across return trips
 
 ### Incremental processing
 outputs/processed.json tracks processed filenames. Each run only processes new files.
