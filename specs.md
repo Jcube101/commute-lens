@@ -46,6 +46,7 @@ One row per classified trip. All fields are strings in the CSV.
 | `walk_detected` | bool | Walk detector | True if a trailing walk segment was truncated |
 | `walk_duration_mins` | float | Walk detector | Duration of the removed walk segment |
 | `walk_origin` | str | Walk detector | Anchor name where walk started (e.g. "Nexus Mall Koramangala", "OFFICE", "HOME") |
+| `dwell_stops` | str | Spatial dwell detector | Semicolon-separated list of dwell events: "Location HH:MM-HH:MM (Xmin)". Empty if no dwell detected |
 
 ### Enrichment fields (added by main.py)
 
@@ -130,8 +131,8 @@ bluelink:
 3. **Merge consecutive groups** — files with inter-file gap < 30 min are merged before classification
 4. **Walk detection** — if raw endpoint is near OFFICE or HOME, scan for trailing walk segment (< 7 km/h, > 3 min, < 1 km). Truncate before classification
 5. **Classify trips** — each group classified against anchor pairs; see classification rules below
-6. **Detect stops** — gap-based stop detector run on each classified trip
-6. **Write parser output** — append new rows to `master_trips.csv`; remove superseded rows on re-merge
+6. **Detect stops** — gap-based stop detector run on each classified trip, then spatial dwell detector for stops missed by gap analysis
+7. **Write parser output** — append new rows to `master_trips.csv`; remove superseded rows on re-merge
 7. **Fetch Bluelink daily aggregates** — last 4 months of daily trip stats via `_get_trip_info()`, upserted to `outputs/bluelink_daily.csv`. Silent on failure
 8. **Fetch sheet CSV** — `requests.get(sheet_csv_url)` on every run; parse and index by (date, direction)
 9. **Load petrol prices** — read date-range table from `petrol_prices.csv`
@@ -209,6 +210,28 @@ no anchor match at either end                  -> discard (None returned)
 | anchor exclusion | — | Midpoint must not be within any anchor radius |
 
 All four conditions must hold simultaneously. Configurable via `thresholds.stop_min_minutes` in config.yaml.
+
+---
+
+## Spatial dwell detection parameters
+
+Runs **after** gap-based stop detection. Catches parked stops where OsmAnd kept logging at low frequency (GPS drift exceeding the 10m displacement threshold). Dwells that overlap existing gap-based stops (within 5 minutes) are skipped to avoid double-counting.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `DWELL_RADIUS_M` | 50.0 | Maximum spatial spread (2x max-centroid-distance) to qualify as stationary |
+| `DWELL_MIN_DURATION_MINS` | 15.0 | Minimum duration of qualifying window |
+| `DWELL_GAP_OVERLAP_TOLERANCE_MINS` | 5.0 | Dwell within this many minutes of a gap-stop is considered redundant |
+| anchor exclusion | — | Centroid must not be within any anchor radius (HOME, OFFICE, MALL) |
+
+Dwell detection fires when ALL conditions hold:
+1. GPS points stay within a 50m diameter for 15+ continuous minutes
+2. Dwell centroid is not at any anchor (not a trip endpoint)
+3. Dwell does not overlap an existing gap-based stop (within 5 min tolerance)
+
+When dwell stops are found, their durations are subtracted from `adjusted_duration_mins` and their locations are appended to `stop_location` (joined with " + " if multiple stop types). The `dwell_stops` field records each event with timestamps and duration.
+
+**Priority order:** Gap-based (priority 1) → Spatial dwell (priority 2). Both contribute to `stop_detected`, `stop_duration_mins`, `stop_location`, and `adjusted_duration_mins`.
 
 ---
 

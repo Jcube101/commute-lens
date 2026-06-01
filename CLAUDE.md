@@ -88,7 +88,7 @@ tripDrvTime (min), tripIdleTime (min), tripDist (km), tripAvgSpeed (km/h), tripM
 - Gap-based stop detection confirmed: 8 stops correctly detected across 41 trips (longest: 95.3 min)
 - Walk detection: trailing walk segments (< 7 km/h for > 3 min, < 1 km) auto-truncated from trips ending near OFFICE or HOME. Endpoint reclassified after truncation. Fields: walk_detected, walk_duration_mins
 - Compound cases confirmed working: Scenario C + walk + long stop all detected independently on same trip (May 18, May 19)
-- As of 2026-05-27: 67 GPX files, 34 classified trips (22 full, 11 partial, 1 flagged), 30 discarded (includes 7 filtered sub-threshold partials), 1 malformed
+- As of 2026-06-01: 77 GPX files, 39 classified trips (27 full, 12 partial), 35 discarded (includes sub-threshold partials), 1 malformed
 
 ### GPX file transfer method (manual, weekly)
 - Android 13+ blocks access to Android/data/ from Files app
@@ -144,7 +144,8 @@ commute-lens/
     heatmap.html             <- speed-coloured map of road segments
     dashboard.html           <- summary charts and trends
   src/
-    parser.py                <- GPX ingestion, trip classifier, merger, stop detection, walk detection, haversine
+    parser.py                <- GPX ingestion, trip classifier, merger, stop detection (gap + spatial dwell), walk detection, haversine
+    detectors.py             <- Experimental detection modules (spatial dwell, tortuosity) — test harness only
     bluelink.py              <- Bluelink daily aggregate fetcher, upserts to outputs/bluelink_daily.csv
     weather.py               <- Open-Meteo fetch by lat/lon/datetime with local cache
     cluster.py               <- DBSCAN route clustering by path similarity, Nominatim labels
@@ -251,12 +252,22 @@ After walk detection, the walk origin overrides the truncated endpoint anchor fo
 Two consecutive GPX files <30 mins apart that together form valid anchor pair -> merged.
 Re-merge: if new file is adjacent to already-processed file, old CSV row replaced with merged result.
 
-### Mid-trip stop detection
+### Mid-trip stop detection (two-layer system)
+
+**Layer 1 — Gap-based detection (priority):**
 Timestamp gap > 20 min + displacement < 150m + entry speed < 15 km/h + not at any anchor:
 - stop_detected = True, stop_duration_mins, stop_location, adjusted_duration_mins recorded
 - Gap-based detection is correct — OsmAnd stops logging when parked (no speed=0 run)
 - **Waypoint matching:** detected stops are checked against waypoints in config.yaml. If stop midpoint falls within a waypoint radius, `stop_location` = waypoint name; otherwise "Unknown". Waypoints also checked via dwell-time analysis (>=10 min near waypoint) to catch unreported stops
-- As of 2026-05-27: 7 stops matched to "Shooting Range" across return trips
+
+**Layer 2 — Spatial dwell detection (catches what gaps miss):**
+Sliding window: GPS stays within 50m radius for 15+ consecutive minutes, not at any anchor:
+- Runs after gap-based detection; skips dwells that overlap gap-stops (within 5 min tolerance)
+- Catches stops where OsmAnd kept logging at low frequency (GPS drift above 10m threshold)
+- Dwell durations subtracted from adjusted_duration_mins; locations appended to stop_location with " + "
+- New CSV field: `dwell_stops` — each event with time, duration, and location
+- As of 2026-06-01: 3 new stops caught (May 5 friend visit 174.9 min, May 26 Shooting Range 99.4 min, Jun 1 snack stop + Shooting Range 52.5 min)
+- Total across all trips: 7 gap-based stops + 3 dwell-based stops = 10 detected stops
 
 ### Incremental processing
 outputs/processed.json tracks processed filenames. Each run only processes new files.
@@ -265,7 +276,7 @@ outputs/processed.json tracks processed filenames. Each run only processes new f
 1. ~~Malformed files not added to processed.json~~ — **FIXED**
 2. ~~No minimum distance/duration filter on partials~~ — **FIXED**: ≥10 km AND ≥20 min threshold
 3. ~~Walk detection fires on ultra-short trips~~ — **FIXED**: guard on trips <10 km or <20 min
-4. ~~Long detours without gaps escape stop detection~~ — **RESOLVED**: suspected unreported stop detection catches these via effective speed + duration anomaly compound rule
+4. ~~Long detours without gaps escape stop detection~~ — **RESOLVED**: spatial dwell detection catches parked stops where OsmAnd kept logging; suspected unreported stop detection catches remaining edge cases via effective speed + duration anomaly
 5. **Near-office zone (150m–800m) catches no current trips** — all borderline trips end >1 km from office. Feature ready for future trips that land in range
 
 ### Distance outlier detection
@@ -282,7 +293,7 @@ Trips ending 150m–800m from OFFICE (outside anchor radius but plausibly office
 ## Full Pipeline — python main.py
 
 1. Check for new GPX files not in processed.json
-2. Parse new files: classify (incl. near-office detection), merge, extract, detect stops
+2. Parse new files: classify (incl. near-office detection), merge, extract, detect stops (gap-based + spatial dwell)
 3. Fetch Bluelink daily aggregates (last 4 months) → upsert to outputs/bluelink_daily.csv (silent on failure)
 4. Fetch sidecar sheet CSV fresh from sheet_csv_url in config.yaml
 5. Look up petrol price by date range from petrol_prices.csv
@@ -326,6 +337,8 @@ Trips ending 150m–800m from OFFICE (outside anchor radius but plausibly office
 - [x] dashboard.html — Plotly self-contained HTML, 5 charts (departure vs duration, day-of-week, duration trend, mileage trend, parking pie), #e85d04 orange + dark theme
 - [x] Pipeline expanded to 7 steps: parse → Bluelink → sheet → petrol → enrich → cluster → visualise
 - [x] Dependencies: numpy, scikit-learn, folium, plotly added to requirements.txt
+- [x] Spatial dwell detection: 50m radius, 15 min minimum, integrated as priority-2 after gap-based stops. Catches 3 new stops (May 5, May 26, Jun 1) that gap-based missed
+- [x] Tortuosity detection: tested and parked — GPS jitter at traffic signals indistinguishable from walking at OsmAnd's 5-6s logging interval. Revisit in Phase 5
 
 ### To Do
 

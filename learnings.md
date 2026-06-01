@@ -234,6 +234,38 @@ With a paused recording, the gap between the last pre-stop point and the first p
 
 ---
 
+## Spatial dwell detection complements gap-based stops
+
+**What I built:** A sliding-window detector that finds segments where GPS position stays within a 50m radius for 15+ consecutive minutes. Runs after gap-based stop detection; skips dwells that overlap existing gap-stops (within 5 minutes) to avoid double-counting.
+
+**Why gap-based detection alone is insufficient:** OsmAnd's displacement-based recording (10m threshold) means that when parked, no points are logged — producing clean timestamp gaps that the gap detector catches. But when the car is parked and the phone has enough GPS drift to occasionally exceed the 10m threshold, OsmAnd keeps logging sporadically. These low-frequency points fill in the gap, making it too small for gap-based detection. The car is clearly stationary (all points within a 30-50m radius for an hour), but no single timestamp jump exceeds the 20-minute gap threshold.
+
+**What it caught:** Three trips that gap detection missed:
+- May 5 return: 174.9 min of dwell at an unknown location (friend visit). Previously only caught by the statistical suspected-unreported-stop heuristic. Now has a clean spatial signal
+- May 26 return: 99.4 min at the Shooting Range. OsmAnd logged consistently throughout — no gap exceeded 20 minutes
+- Jun 1 return: 52.5 min across two stops (20 min unknown snack stop + 32 min Shooting Range)
+
+**Algorithm:** 2x max-centroid-distance as the spread metric (O(n) per window check, not O(n^2) pairwise). Sliding window expands until the 15-minute minimum is met, then greedily extends while the spread stays under 50m. Adjacent qualifying windows are merged. Centroid is checked against anchors (HOME/OFFICE/MALL) — dwells at trip endpoints are suppressed.
+
+**Priority order:** Gap-based first (catches clean pauses), then spatial dwell (catches sporadic logging during stops). Both contribute to `adjusted_duration_mins`. The `dwell_stops` CSV field records each dwell with time, duration, and location.
+
+---
+
+## Tortuosity detection is unreliable at OsmAnd's logging resolution
+
+**What I tested:** A tortuosity detector that scans for erratic low-speed segments (path_length / straight_line_displacement > threshold) to catch wandering at petrol bunks, snack stops, and forecourts.
+
+**What went wrong:** At OsmAnd's 5-6 second logging interval, GPS jitter at traffic signals is indistinguishable from slow walking. A car stopped at a red light for 3 minutes produces 30-40 points with 2-5m GPS drift between each — the same pattern as someone walking around a petrol bunk forecourt. Tortuosity scores of 5-15 appeared on both genuine erratic movement (shooting range parking lot) and normal traffic stops.
+
+**Threshold sweep results:**
+- tortuosity > 2.0, min 2 min: 46 triggers, mostly GPS noise at traffic signals
+- tortuosity > 2.5, min 2 min: 38 triggers, still too noisy
+- tortuosity > 3.0, min 3 min: 23 triggers, cleaner but still ~50% false positives on commute trips
+
+**Why this is fundamentally hard:** The issue is spatial resolution, not algorithm design. At 5m GPS accuracy and 5-second intervals, a stationary car and a slowly walking person produce overlapping movement signatures. Higher resolution GPS (1-second logging) or ground truth calibration data (manual stop labels for 50+ trips) would be needed to separate the distributions. Filed for Phase 5 revisit.
+
+---
+
 ## Bluelink API does not provide per-trip mileage for India
 
 **What I tested:** `hyundai_kia_connect_api` v4.10.3 with region=6 (India), brand=2 (Hyundai), against a Hyundai Exter AMT registered Dec 2024.
