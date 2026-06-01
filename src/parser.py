@@ -47,6 +47,7 @@ CSV_FIELDS = [
     "walk_detected",
     "walk_duration_mins",
     "walk_origin",
+    "dwell_stops",
 ]
 
 
@@ -392,6 +393,168 @@ def _detect_waypoint_dwell(
 
 
 # ---------------------------------------------------------------------------
+# Spatial dwell detection
+# ---------------------------------------------------------------------------
+
+DWELL_RADIUS_M = 50.0
+DWELL_MIN_DURATION_MINS = 15.0
+DWELL_GAP_OVERLAP_TOLERANCE_MINS = 5.0
+
+
+def _max_spread(points: List[TrackPoint], start: int, end: int) -> float:
+    """2x max distance from centroid for points[start:end+1]. O(n)."""
+    n = end - start + 1
+    if n < 2:
+        return 0.0
+    clat = sum(points[k].lat for k in range(start, end + 1)) / n
+    clon = sum(points[k].lon for k in range(start, end + 1)) / n
+    max_dist = 0.0
+    for k in range(start, end + 1):
+        d = haversine(clat, clon, points[k].lat, points[k].lon)
+        if d > max_dist:
+            max_dist = d
+    return max_dist * 2
+
+
+def detect_spatial_dwell(
+    points: List[TrackPoint],
+    home: 'Anchor',
+    office: 'Anchor',
+    mall: 'Anchor',
+    waypoints: Optional[List['Waypoint']] = None,
+    radius_m: float = DWELL_RADIUS_M,
+    min_duration_mins: float = DWELL_MIN_DURATION_MINS,
+    gap_stop_intervals: Optional[List[Tuple[datetime, datetime]]] = None,
+) -> List[Dict]:
+    """
+    Detect segments where GPS stays within a small radius for extended time.
+
+    Catches parked stops where OsmAnd kept logging at low frequency — gap-based
+    detection misses these because no large timestamp gap exists.
+
+    Returns list of dwell event dicts. Skips dwells at anchors and dwells that
+    overlap existing gap-based stops (within tolerance).
+    """
+    if len(points) < 2:
+        return []
+
+    min_duration_secs = min_duration_mins * 60.0
+    overlap_secs = DWELL_GAP_OVERLAP_TOLERANCE_MINS * 60.0
+    anchors = [home, office, mall]
+
+    # Phase 1: sliding window to find qualifying dwell intervals
+    dwell_intervals: List[Tuple[int, int]] = []
+    i = 0
+    while i < len(points) - 1:
+        j = i + 1
+        while j < len(points) and (points[j].time - points[i].time).total_seconds() < min_duration_secs:
+            j += 1
+        if j >= len(points):
+            break
+
+        spread = _max_spread(points, i, j)
+        if spread < radius_m:
+            best_j = j
+            k = j + 1
+            while k < len(points):
+                if _max_spread(points, i, k) < radius_m:
+                    best_j = k
+                    k += 1
+                else:
+                    break
+            dwell_intervals.append((i, best_j))
+            i = best_j + 1
+        else:
+            i += 1
+
+    if not dwell_intervals:
+        return []
+
+    # Phase 2: merge overlapping/adjacent intervals
+    merged: List[Tuple[int, int]] = [dwell_intervals[0]]
+    for start, end in dwell_intervals[1:]:
+        if start <= merged[-1][1] + 1:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+
+    # Phase 3: build events, filtering anchors and gap-stop overlaps
+    events: List[Dict] = []
+    for start_idx, end_idx in merged:
+        segment = points[start_idx:end_idx + 1]
+        duration = (segment[-1].time - segment[0].time).total_seconds() / 60.0
+        if duration < min_duration_mins:
+            continue
+
+        n = len(segment)
+        clat = sum(p.lat for p in segment) / n
+        clon = sum(p.lon for p in segment) / n
+        spread = _max_spread(points, start_idx, end_idx)
+
+        if any(a.matches(clat, clon) for a in anchors):
+            continue
+
+        # Skip if this dwell overlaps an existing gap-based stop
+        if gap_stop_intervals:
+            dwell_start = segment[0].time
+            dwell_end = segment[-1].time
+            overlaps = False
+            for gap_start, gap_end in gap_stop_intervals:
+                if (dwell_start.timestamp() <= gap_end.timestamp() + overlap_secs
+                        and dwell_end.timestamp() >= gap_start.timestamp() - overlap_secs):
+                    overlaps = True
+                    break
+            if overlaps:
+                continue
+
+        location = _match_waypoint(clat, clon, waypoints) or "Unknown"
+        events.append({
+            "start_time": segment[0].time,
+            "end_time": segment[-1].time,
+            "duration_mins": round(duration, 1),
+            "centroid_lat": round(clat, 6),
+            "centroid_lon": round(clon, 6),
+            "radius_m": round(spread, 1),
+            "location": location,
+        })
+
+    return events
+
+
+def _get_gap_stop_intervals(
+    points: List[TrackPoint],
+    stop_min_minutes: float,
+    max_displacement_m: float = 150.0,
+    max_entry_speed_kmh: float = 15.0,
+) -> List[Tuple[datetime, datetime]]:
+    """Return (start_time, end_time) for each gap-based stop, for overlap checking."""
+    intervals = []
+    for i in range(len(points) - 1):
+        p1, p2 = points[i], points[i + 1]
+        gap_min = (p2.time - p1.time).total_seconds() / 60.0
+        if gap_min < stop_min_minutes:
+            continue
+        if p1.speed_kmh is not None and p1.speed_kmh > max_entry_speed_kmh:
+            continue
+        if haversine(p1.lat, p1.lon, p2.lat, p2.lon) > max_displacement_m:
+            continue
+        intervals.append((p1.time, p2.time))
+    return intervals
+
+
+def _format_dwell_stops(events: List[Dict]) -> str:
+    """Format dwell events into a human-readable string for the CSV field."""
+    if not events:
+        return ""
+    parts = []
+    for ev in events:
+        start_ist = ev["start_time"].astimezone(IST).strftime("%H:%M")
+        end_ist = ev["end_time"].astimezone(IST).strftime("%H:%M")
+        parts.append(f"{ev['location']} {start_ist}-{end_ist} ({ev['duration_mins']}min)")
+    return "; ".join(parts)
+
+
+# ---------------------------------------------------------------------------
 # Walk detection and truncation
 # ---------------------------------------------------------------------------
 
@@ -626,6 +789,7 @@ def classify_trip(
     arrival_ist = points[-1].time.astimezone(IST)
     duration_min = (points[-1].time - points[0].time).total_seconds() / 60.0
 
+    # --- Gap-based stop detection (priority 1) ---
     stop_detected, stop_duration_mins, stop_location = detect_stops(
         points, home, office, mall, stop_min_minutes=stop_min_minutes,
         waypoints=waypoints,
@@ -638,6 +802,32 @@ def classify_trip(
         wp_dwell = _detect_waypoint_dwell(points, waypoints)
         if wp_dwell:
             stop_location = wp_dwell
+
+    # --- Spatial dwell detection (priority 2) ---
+    # Catches parked stops where OsmAnd kept logging at low frequency
+    gap_intervals = _get_gap_stop_intervals(points, stop_min_minutes)
+    dwell_events = detect_spatial_dwell(
+        points, home, office, mall,
+        waypoints=waypoints,
+        gap_stop_intervals=gap_intervals,
+    )
+
+    dwell_stops_str = _format_dwell_stops(dwell_events)
+    total_dwell_mins = sum(ev["duration_mins"] for ev in dwell_events)
+    if total_dwell_mins > 0:
+        adjusted_duration_mins = round(adjusted_duration_mins - total_dwell_mins, 1)
+        stop_detected = True
+        stop_duration_mins = round(stop_duration_mins + total_dwell_mins, 1)
+        dwell_locations = []
+        for ev in dwell_events:
+            if ev["location"] not in dwell_locations:
+                dwell_locations.append(ev["location"])
+        if stop_location:
+            for loc in dwell_locations:
+                if loc not in stop_location:
+                    stop_location = stop_location + " + " + loc
+        else:
+            stop_location = " + ".join(dwell_locations)
 
     return {
         "filename": None,
@@ -660,6 +850,7 @@ def classify_trip(
         "walk_detected": walk_detected,
         "walk_duration_mins": walk_duration_mins,
         "walk_origin": walk_origin or "",
+        "dwell_stops": dwell_stops_str,
         "points": points,
     }
 
