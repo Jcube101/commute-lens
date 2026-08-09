@@ -303,3 +303,15 @@ With a paused recording, the gap between the last pre-stop point and the first p
 **Why this generalizes:** the same signal — points-per-second cadence, not just instantaneous speed — is likely useful anywhere else in the parser that infers "is this thing still moving" from speed alone. Worth remembering for any future detector (e.g. revisiting tortuosity detection in Phase 5) rather than re-discovering it from scratch.
 
 **Decision:** Cannot replace manual mileage entry, but daily aggregates are useful supplementary data. `bluelink.py` fetches last 4 months of daily aggregates on every pipeline run and upserts to `outputs/bluelink_daily.csv`. Uses the raw `_get_trip_info()` method to avoid the library crash. Pipeline continues gracefully if Bluelink is unavailable — fetch errors are logged and skipped.
+
+---
+
+## Pipeline execution moved to the Pi — a hosting change, not a privacy change
+
+**What I did (2026-08-09):** Migrated the real pipeline from Windows to jobpi (`~/projects/commute-lens`), consolidating it with other personal services already running there. Cloned the repo, copied `config.yaml` and all 133 GPX files over via `scp`, and verified all 7 pipeline steps end-to-end (77 trips, matching the last Windows run's count).
+
+**Why this is safe despite the privacy-first portfolio decision:** Moving *where the pipeline runs* is orthogonal to *whether its output is public*. The Pi already hosts several personal services, none of them exposed unless explicitly routed through Cloudflare Tunnel. This migration adds no Tunnel ingress entry and no subdomain — `outputs/heatmap.html` and `outputs/dashboard.html` on the Pi are exactly as private as they were on Windows, reachable only via SSH. The eventual public site (`commute.job-joseph.com`, Phase 4/Track B) will serve a separately-generated synthetic dataset, never this real output.
+
+**Why keep the manual trigger instead of a systemd timer:** The original decision to avoid Windows Task Scheduler wasn't about the OS — it was about keeping the pipeline run a deliberate, reviewed action rather than a silent background job (weather API calls, Bluelink login attempts, and a rewritten `master_trips.csv` are not things you want firing unattended on a schedule you might forget about). That reasoning holds regardless of which machine runs the command, so the Pi version stays SSH-triggered.
+
+**Lesson:** when the same automation moves between environments, it's worth explicitly re-deriving *why* each constraint existed rather than assuming it was tied to the old environment. "No scheduler" and "no public data" turned out to be two independent decisions, not one — moving the pipeline only implicated one of them.

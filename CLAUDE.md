@@ -39,6 +39,8 @@ Designed as a public GitHub project and portfolio piece.
 - **Bluelink API**: tested 2026-04-21. Per-trip mileage NOT available from India API — cannot replace manual sheet entry. But daily aggregates (distance, drive time, idle time, avg/max speed, trip count) work and are fetched on every pipeline run via `bluelink.py`. See findings below
 - **Bluelink login broke 2026-08-09** — Hyundai's India signin endpoint now returns `{"step": 5, "upgrade": false}` instead of a `redirectUrl`. Confirmed on both the pinned library version (4.10.3) and the latest (4.23.0) — not a library-version issue, root cause is server-side. Pipeline degrades gracefully (Bluelink step just gets skipped). GitHub issue drafted at `data/issues/bluelink_github_issue.md` (gitignored) for the user to file upstream
 - **`data/issues/` added and gitignored** — scratch folder for draft notes (e.g. upstream bug reports) that shouldn't be committed to the repo
+- **Pipeline migrated to jobpi (2026-08-09)** — the real pipeline (parser, weather, Bluelink, clustering, heatmap/dashboard generation) now runs on the Raspberry Pi at `~/projects/commute-lens` instead of Windows. Trigger stays manual: SSH into the Pi and run `python src/main.py` — no systemd timer, no cron, preserving the original "deliberate Go trigger" decision, just on different hardware. GPX sync stays the same manual OsmAnd -> Google Drive -> local step, except the local machine is now the Pi: `config.yaml` and `data/gpx/` are pushed to the Pi via `scp` from Windows (not committed — both remain gitignored on the Pi copy too). Nothing about this migration exposes anything publicly — no Cloudflare Tunnel entry, no subdomain, reachable only via SSH on the LAN/Tailscale, consistent with the privacy-first portfolio strategy below. The public `commute.job-joseph.com` subdomain (when built) will serve only the synthetic demo (Phase 4), never this real pipeline's output
+- **jobpi's LAN IP is not static** — it moved from 192.168.1.199 to 192.168.1.63 between sessions (DHCP). If SSH/scp to the old IP times out, check the current IP or use jobpi's Tailscale address instead
 
 ### Bluelink API experiment results (2026-04-21)
 
@@ -352,6 +354,7 @@ Trips ending 150m–800m from OFFICE (outside anchor radius but plausibly office
 - [x] Dependencies: numpy, scikit-learn, folium, plotly added to requirements.txt
 - [x] Spatial dwell detection: 50m radius, 15 min minimum, integrated as priority-2 after gap-based stops. Catches 3 new stops that gap-based missed
 - [x] Tortuosity detection: tested and parked — GPS jitter at traffic signals indistinguishable from walking at OsmAnd's 5-6s logging interval. Revisit in Phase 5
+- [x] Pipeline migrated to jobpi (2026-08-09): repo cloned, venv + requirements installed, config.yaml + 133 GPX files copied via scp, full 7-step pipeline verified end-to-end (77 trips, weather/sheet/petrol/clustering all working, Bluelink degraded gracefully as expected). Manual SSH trigger preserved, nothing exposed publicly. Windows copy left in place for now (retire once Pi run is confirmed stable over a few weeks)
 
 ### To Do
 

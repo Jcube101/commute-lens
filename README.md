@@ -173,7 +173,8 @@ The interactive explorer lets you select a profile, toggle departure window and 
 - **Phase 1** (complete): GPX parser, incremental processing, stop detection
 - **Phase 2** (complete): Weather enrichment, sheet join, petrol price, Bluelink daily aggregates, walk detection, full pipeline
 - **Phase 3** (complete): Route clustering (DBSCAN), speed heatmap (Folium + CartoDB Positron), analytics dashboard (Plotly)
-- **Phase 4**: Synthetic demo mode (OSRM + MapLibre GL JS), interactive portfolio frontend
+- **Infrastructure — Track A** (complete): real pipeline migrated to jobpi (Raspberry Pi), manual SSH trigger, nothing exposed publicly
+- **Phase 4 — Track B**: synthetic demo mode (OSRM + MapLibre GL JS), interactive portfolio frontend, hosted publicly at `commute.job-joseph.com`
 - **Phase 5**: Junction bottleneck ranking, day-of-week variance, seasonal patterns
 - **Phase 6**: Predictive departure model, commute cost calculator, city-level traffic intelligence
 

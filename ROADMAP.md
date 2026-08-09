@@ -70,11 +70,24 @@ Hyundai's India Bluelink signin endpoint now returns `{"step": 5, "upgrade": fal
 
 ---
 
-## Phase 4 — Demo mode and portfolio (target of 40 full trips reached — ready to start)
+## Infrastructure — Pi Migration (Track A, complete)
 
-**Goal:** Make this presentable as a portfolio project without exposing personal location data.
+**Goal:** Move the real pipeline off Windows onto jobpi (the Raspberry Pi already hosting other personal services) without changing its privacy posture — this is purely a hosting change, not a step toward public exposure.
 
-**Status:** 59 full commute trips as of 2026-08-09 — past the 40-trip threshold set for this phase. Work below can start whenever bandwidth allows.
+- [x] Repo cloned to `~/projects/commute-lens` on jobpi, venv created, all requirements installed
+- [x] `config.yaml` (real coordinates/credentials) and all 133 GPX files copied to the Pi via `scp`
+- [x] Full 7-step pipeline verified end-to-end on the Pi (77 trips: weather, sheet join, petrol lookup, clustering, heatmap/dashboard generation all working; Bluelink failed with the same known upstream "Login Failed" issue and degraded gracefully as designed)
+- [x] Manual SSH trigger preserved — `ssh` in and run `python src/main.py` by hand, no systemd timer or cron, same "deliberate Go" decision as on Windows
+- [x] Nothing exposed publicly — no Cloudflare Tunnel entry, no subdomain; reachable only via SSH on the LAN/Tailscale
+- [ ] Retire the Windows copy of the pipeline once the Pi has run stably for a few weeks
+
+---
+
+## Phase 4 — Demo mode and portfolio (Track B) (target of 40 full trips reached — ready to start)
+
+**Goal:** Make this presentable as a portfolio project without exposing personal location data. Public target: `commute.job-joseph.com`, hosted on jobpi via Cloudflare Tunnel — serving only synthetic demo output, never the real pipeline from Track A above.
+
+**Status:** 59 full commute trips as of 2026-08-09 — past the 40-trip threshold set for this phase. None of the work below has started yet (no `generate_demo.py`, no `data/demo/`, no frontend).
 
 ### Synthetic demo mode (`generate_demo.py`)
 
@@ -101,9 +114,10 @@ Hyundai's India Bluelink signin endpoint now returns `{"step": 5, "upgrade": fal
 ### Portfolio polish
 
 - [ ] `README.md` — bold, personality-first, #e85d04 orange, shields.io badges, heatmap as hero visual
+- [ ] Serve the demo output from jobpi at `commute.job-joseph.com` — systemd service + Cloudflare Tunnel ingress entry (see PORTS.md for port assignment)
 - [ ] Portfolio page on job-joseph.com (Lovable prompt)
 - [ ] Add to CV alongside other projects
-- [ ] Clearly labelled "illustrative" on portfolio — real analysis runs locally
+- [ ] Clearly labelled "illustrative" on portfolio — real analysis runs locally on the Pi, never exposed
 
 ### Narrative arc
 
