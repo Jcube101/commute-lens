@@ -37,6 +37,8 @@ Designed as a public GitHub project and portfolio piece.
 - **GPX sync is manual** — user copies from G:\My Drive\Miscellaneous\GPX to data/gpx/ before running pipeline
 - **Sheet is read-only** — pipeline never writes to it. View-only link is correct and intentional
 - **Bluelink API**: tested 2026-04-21. Per-trip mileage NOT available from India API — cannot replace manual sheet entry. But daily aggregates (distance, drive time, idle time, avg/max speed, trip count) work and are fetched on every pipeline run via `bluelink.py`. See findings below
+- **Bluelink login broke 2026-08-09** — Hyundai's India signin endpoint now returns `{"step": 5, "upgrade": false}` instead of a `redirectUrl`. Confirmed on both the pinned library version (4.10.3) and the latest (4.23.0) — not a library-version issue, root cause is server-side. Pipeline degrades gracefully (Bluelink step just gets skipped). GitHub issue drafted at `data/issues/bluelink_github_issue.md` (gitignored) for the user to file upstream
+- **`data/issues/` added and gitignored** — scratch folder for draft notes (e.g. upstream bug reports) that shouldn't be committed to the repo
 
 ### Bluelink API experiment results (2026-04-21)
 
@@ -63,7 +65,13 @@ tripDrvTime (min), tripIdleTime (min), tripDist (km), tripAvgSpeed (km/h), tripM
 
 **Monthly data sample (Apr 2026):** 811 km across 16 driving days, 2042 min drive time, 685 min idle time, avg 24.2 km/h, max 132 km/h
 
-**Verdict:** Cannot replace manual mileage column, but daily aggregates are useful supplementary data. `bluelink.py` runs on every `python main.py` execution, fetches last 4 months of daily aggregates via raw `_get_trip_info()`, and upserts to `outputs/bluelink_daily.csv` keyed on date. Pipeline continues gracefully if Bluelink is unavailable — fetch errors are logged and skipped
+**Verdict:** Cannot replace manual mileage column, but daily aggregates are useful supplementary data. `bluelink.py` runs on every `python src/main.py` execution, fetches last 4 months of daily aggregates via raw `_get_trip_info()`, and upserts to `outputs/bluelink_daily.csv` keyed on date. Pipeline continues gracefully if Bluelink is unavailable — fetch errors are logged and skipped
+
+### Bluelink login failure (2026-08-09)
+
+Login started failing with a generic `AuthenticationError("Login Failed")`. Debug logging traced it to `KiaUvoApiIN._get_authorization_code_with_redirect_url`: the `/api/v1/user/signin` POST now returns `{"step": 5, "upgrade": false}` instead of the `redirectUrl` the library expects — a `KeyError` gets swallowed by a broad `except Exception` and re-raised as the generic message.
+
+Tested against both the pinned version (4.10.3) and the latest release (4.23.0) in an isolated venv — identical failure on both, so upgrading does not fix it. This looks like Hyundai's India Bluelink backend now requiring an extra verification step (OTP, forced T&C re-acceptance, or similar) that neither library version implements for the India region. Not fixable in our own code — needs to be cleared via the official Bluelink app/website, or a library fix from upstream once someone figures out what step 5 expects. Issue draft ready at `data/issues/bluelink_github_issue.md`.
 
 ### Commute structure
 - User parks at a **nearby mall** most days — avoids traffic U-turn, saves ~15 mins
@@ -84,11 +92,13 @@ tripDrvTime (min), tripIdleTime (min), tripDist (km), tripAvgSpeed (km/h), tripM
 - OsmAnd logs: lat/lon, timestamp, elevation, speed (m/s), HDOP at every point
 - Speed stored under OsmAnd namespace: https://osmand.net/docs/technical/osmand-file-formats/osmand-gpx
 - Point interval: ~5-6 seconds — sufficient for junction-level bottleneck detection
-- Parser handles malformed GPX files gracefully (skips with warning — but does NOT add to processed.json, so retried every run)
+- Parser handles malformed GPX files gracefully (skips with warning). Malformed filenames ARE added to processed.json so they're never reprocessed as data — but `load_and_sort_gpx_files()` re-scans every file in `data/gpx/` on every run (not just new ones) and unconditionally prints the warning again, so the console message repeats every run even after the file is "processed". Cosmetic only, no data impact
 - Gap-based stop detection confirmed: 8 stops correctly detected across 41 trips (longest: 95.3 min)
 - Walk detection: trailing walk segments (< 7 km/h for > 3 min, < 1 km) auto-truncated from trips ending near OFFICE or HOME. Endpoint reclassified after truncation. Fields: walk_detected, walk_duration_mins
+- **Walk detection drift bug fixed (2026-08-09):** trailing GPS points logged at low frequency after the phone goes stationary (still <7 km/h, since speed reads ~0) were getting folded into the walk segment, inflating `walk_duration_mins` well past the real walk. Fix: `WALK_DRIFT_GAP_SECONDS = 30.0` in `parser.py` — the walk segment stops extending once the logging gap between consecutive points exceeds 30s (OsmAnd logs every 3-5s while genuinely moving). Confirmed on the 2026-06-25 trip: `walk_duration_mins` corrected from 43.5 → 10.7 min, matching the actual continuous-walking-speed window in the raw GPX
 - Compound cases confirmed working: Scenario C + walk + long stop all detected independently on same trip (two real trips)
 - As of 2026-06-01: 77 GPX files, 39 classified trips (27 full, 12 partial), 35 discarded (includes sub-threshold partials), 1 malformed
+- As of 2026-08-09: 133 GPX files (57 new files processed this session → 38 new trips, 19 discarded), 77 classified trips total (59 full, 18 partial), 3 flagged (outlier/suspected stop). The one malformed file (`2026-04-18_20-52_Sat.gpx`) was deleted — it was a truncated duplicate of `2026-04-18_20-52_Sat_2.gpx`, which already covered its full time range and more, so deletion cost zero data
 
 ### GPX file transfer method (manual, weekly)
 - Android 13+ blocks access to Android/data/ from Files app
@@ -136,6 +146,7 @@ commute-lens/
     reference/
       Commute_Sidecar.xlsx   <- minimal manual log (uploaded to Google Sheets)
       petrol_prices.csv      <- date-range fuel price reference (seeded: Rs 103/l from 2026-04-13)
+    issues/                  <- scratch notes, e.g. draft upstream bug reports (gitignored)
   outputs/                   <- all generated files (gitignored)
     master_trips.csv         <- one row per trip, all fields merged
     processed.json           <- tracks which GPX files have been processed (incremental)
@@ -273,11 +284,12 @@ Sliding window: GPS stays within 50m radius for 15+ consecutive minutes, not at 
 outputs/processed.json tracks processed filenames. Each run only processes new files.
 
 ### Known parser limitations (as of 2026-05-25) — all resolved
-1. ~~Malformed files not added to processed.json~~ — **FIXED**
+1. ~~Malformed files not added to processed.json~~ — **FIXED** (filenames are added; the per-run warning print is still cosmetic-repeated regardless, see GPX data notes above — not a data bug)
 2. ~~No minimum distance/duration filter on partials~~ — **FIXED**: ≥10 km AND ≥20 min threshold
 3. ~~Walk detection fires on ultra-short trips~~ — **FIXED**: guard on trips <10 km or <20 min
 4. ~~Long detours without gaps escape stop detection~~ — **RESOLVED**: spatial dwell detection catches parked stops where OsmAnd kept logging; suspected unreported stop detection catches remaining edge cases via effective speed + duration anomaly
 5. **Near-office zone (150m–800m) catches no current trips** — all borderline trips end >1 km from office. Feature ready for future trips that land in range
+6. ~~Walk detection counted stationary GPS drift after arrival as part of the walk~~ — **FIXED (2026-08-09)**: see `WALK_DRIFT_GAP_SECONDS` in GPX data notes above
 
 ### Distance outlier detection
 Trips whose distance exceeds 2.5 SD from mean distance for their direction are flagged `outlier=True` with reason string. Requires ≥5 full trips per direction. Outliers excluded from clustering, dashboard, and departure time analysis but kept in heatmap and master_trips.csv. Current status (2026-05-25): 0 outliers flagged — return direction has high natural variance (SD 3.13 km) due to mall-detour vs direct routes.
@@ -290,7 +302,7 @@ Trips ending 150m–800m from OFFICE (outside anchor radius but plausibly office
 
 ---
 
-## Full Pipeline — python main.py
+## Full Pipeline — python src/main.py
 
 1. Check for new GPX files not in processed.json
 2. Parse new files: classify (incl. near-office detection), merge, extract, detect stops (gap-based + spatial dwell)
@@ -325,8 +337,9 @@ Trips ending 150m–800m from OFFICE (outside anchor radius but plausibly office
 - [x] Parser resilient to malformed GPX files (skips with warning)
 - [x] Join pipeline verified end-to-end — 67 GPX files, 34 trips (22 full + 12 partial), 25 sheet rows, weather + Bluelink all populated
 - [x] requirements.txt created
-- [x] All markdown files created: README, CLAUDE, learnings, specs, roadmap, CONTRIBUTING
+- [x] All markdown files created: README, CLAUDE, LEARNINGS, SPECS, ROADMAP, CONTRIBUTING
 - [x] All changes committed and pushed to GitHub
+- [x] Doc cleanup (2026-08-09): learnings.md/roadmap.md/specs.md renamed to LEARNINGS.md/ROADMAP.md/SPECS.md; README restructured with a "Why this exists" section (contrast with live-routing apps) and venv setup instructions, setup steps that duplicated CONTRIBUTING.md trimmed; `.claude/` untracked and gitignored so local permission settings stop showing as modified/untracked
 - [x] Walk detection: trailing walk segments auto-truncated from trips ending near OFFICE or HOME (< 7 km/h, > 3 min, < 1 km). 12 walks detected across 41 trips (mostly office-end outbound, 2 return-end)
 - [x] Compound detection confirmed: Scenario C + walk + long stop all fire independently on same trip
 
@@ -383,7 +396,7 @@ Trips ending 150m–800m from OFFICE (outside anchor radius but plausibly office
 ## Data Sources
 - OsmAnd GPX: personal GPS recordings
 - Open-Meteo: free, no API key, forecast API (<90 days) + archive API (older) for weather by lat/lon
-- Hyundai Bluelink: daily trip aggregates via `hyundai_kia_connect_api` (region=6 India). Optional — pipeline runs without it
+- Hyundai Bluelink: daily trip aggregates via `hyundai_kia_connect_api` (region=6 India). Optional — pipeline runs without it. **Login broken as of 2026-08-09** — see Bluelink login failure notes above
 - OSRM (router.project-osrm.org): free routing API on OpenStreetMap for demo road geometry
 - OpenFreeMap tiles: free map tiles for portfolio frontend
 - Google Sheet CSV: personal sidecar log, fetched fresh each pipeline run

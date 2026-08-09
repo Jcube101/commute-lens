@@ -278,4 +278,28 @@ With a paused recording, the gap between the last pre-stop point and the first p
 
 **History depth:** Only Jan 2026 – present (~4 months back from April 2026). Dec 2025 and earlier returns empty responses despite the car being registered Dec 2024. Either the India server has a short retention window or Bluelink was not activated until Jan 2026.
 
+---
+
+## Bluelink India login broke server-side — confirmed not a library version problem
+
+**What happened (2026-08-09):** Bluelink fetches started failing with a generic `AuthenticationError("Login Failed")`, despite unchanged credentials and a working account (last confirmed working April 2026).
+
+**How I isolated it:** Enabled `logging.basicConfig(level=logging.DEBUG)` and traced the failure to `KiaUvoApiIN._get_authorization_code_with_redirect_url`. The `/api/v1/user/signin` POST, which the library expects to return `{"redirectUrl": "..."}`, now returns `{"step": 5, "upgrade": false}` instead. The code does `urlparse(response["redirectUrl"])` unconditionally, so this throws a `KeyError` that gets swallowed by a broad `except Exception` in `login()` and re-raised as the unhelpful generic message.
+
+**Why I ruled out a library bug:** Before assuming this needed a code fix, I tested the exact same login against the latest published version (4.23.0, vs. the pinned 4.10.3) in an isolated venv — installed cleanly, same `{"step": 5, ...}` response, same failure. If it were a library regression, upgrading would have been the fix; since it wasn't, the change must be server-side on Hyundai's end (most likely a new mandatory verification step for India accounts that no released library version implements).
+
+**Lesson:** when an unofficial API wrapper starts failing, testing against `pip install --upgrade` in an isolated venv (never touch the working environment directly) is a fast way to rule out "already fixed upstream" before spending time on root-causing further. It took under 10 minutes and definitively separated "our pinned version is stale" from "the world changed under us."
+
+---
+
+## Walk detection: stationary GPS drift after arrival was inflating walk duration
+
+**What I built:** `detect_and_truncate_walk()` finds the trailing sub-7km/h segment of a trip, but originally measured its duration from the first slow-speed point straight through to the last point in the GPX file.
+
+**The bug:** Once the phone stops moving (set down at a desk after arriving), OsmAnd's displacement-based logging doesn't fully stop the way it does when the car is parked — it keeps emitting sparse points, minutes apart, at speeds reading ~0 km/h (still below the 7 km/h walk threshold). These drift points got folded into the walk segment, since the original logic only checked speed, not how continuously the points were logged. Confirmed on the 2026-06-25 trip: raw GPX showed ~6-11 minutes of genuine 1 m/s walking speed, immediately followed by ~28 minutes of near-identical coordinates logged every 1-7 minutes. `walk_duration_mins` came out as 43.5 instead of the real ~10.7.
+
+**The fix:** `WALK_DRIFT_GAP_SECONDS = 30.0`. OsmAnd logs every 3-5 seconds while genuinely moving (walking or driving) — a gap between consecutive points wider than 30 seconds is a strong, simple signal that the phone went stationary rather than continuing to move slowly. The walk segment's end index is capped at the last point before the first such gap, instead of running to end-of-file.
+
+**Why this generalizes:** the same signal — points-per-second cadence, not just instantaneous speed — is likely useful anywhere else in the parser that infers "is this thing still moving" from speed alone. Worth remembering for any future detector (e.g. revisiting tortuosity detection in Phase 5) rather than re-discovering it from scratch.
+
 **Decision:** Cannot replace manual mileage entry, but daily aggregates are useful supplementary data. `bluelink.py` fetches last 4 months of daily aggregates on every pipeline run and upserts to `outputs/bluelink_daily.csv`. Uses the raw `_get_trip_info()` method to avoid the library crash. Pipeline continues gracefully if Bluelink is unavailable — fetch errors are logged and skipped.

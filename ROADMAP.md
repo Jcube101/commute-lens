@@ -29,7 +29,7 @@
 - [x] `petrol_prices.csv` seeded
 - [x] `sheet_csv_url` added to `config.yaml` — sheet fetched fresh on every run
 - [x] Parser resilient to malformed GPX files (skips with warning instead of crashing)
-- [x] Verify end-to-end: `python main.py` tested with 19 GPX files (14 classified trips, 3 discarded, 1 malformed skipped), 12 sheet rows, weather for all dates, Bluelink 87 daily records
+- [x] Verify end-to-end: `python src/main.py` tested with 19 GPX files (14 classified trips, 3 discarded, 1 malformed skipped), 12 sheet rows, weather for all dates, Bluelink 87 daily records
 - [x] 14 classified trips (5 full + 9 partial) with full data — ready for Phase 3
 
 ### Bluelink API findings (2026-04-21)
@@ -56,18 +56,25 @@
 - [x] Suspected unreported stop detection: duration >2.5 SD + effective speed <15 km/h + no gap → excluded from stats
 - [x] Near-office classification: 150m–800m from OFFICE → included in heatmap, excluded from stats
 - [x] Partial trip filter: ≥10 km AND ≥20 min minimum, otherwise discarded
-- [x] Malformed file dedup: skipped files added to processed.json, warning once only
+- [x] Malformed file dedup: skipped filenames added to processed.json so they're never reprocessed as data (the console warning still reprints every run since the directory is fully re-scanned each time — cosmetic, not a data bug)
 - [x] MALL preference for ambiguous walk origins: when MALL and OFFICE distances are within 55m, prefer MALL (parking prior: 12:3 ratio)
 - [x] Named waypoints for stop location enrichment: `waypoints` section in config.yaml, `stop_location` field in master_trips.csv. 7 stops matched to Shooting Range
 - [x] Current counts (2026-05-27): 34 trips (22 full commute + 11 partial + 1 flagged), 30 discarded
+- [x] Walk detection drift fix (2026-08-09): trailing stationary GPS points (phone set down after arrival, still reading <7 km/h) were inflating `walk_duration_mins`. `WALK_DRIFT_GAP_SECONDS = 30.0` caps the walk segment at the last point before a >30s logging gap. Fixed a 43.5 → 10.7 min misread on the 2026-06-25 trip
+- [x] Deleted redundant malformed GPX file (`2026-04-18_20-52_Sat.gpx`) — a truncated duplicate fully covered by `2026-04-18_20-52_Sat_2.gpx`
+- [x] Current counts (2026-08-09): 133 GPX files, 77 classified trips (59 full + 18 partial), 3 flagged
+
+### Bluelink login broken (2026-08-09)
+
+Hyundai's India Bluelink signin endpoint now returns `{"step": 5, "upgrade": false}` instead of a `redirectUrl`, failing login with a generic `AuthenticationError`. Confirmed on both the pinned (4.10.3) and latest (4.23.0) `hyundai_kia_connect_api` versions — not a library-version problem, root cause is server-side (likely a new mandatory verification step). Pipeline continues to degrade gracefully without it. Upstream bug report drafted at `data/issues/bluelink_github_issue.md` (gitignored).
 
 ---
 
-## Phase 4 — Demo mode and portfolio (pending — target 40 full trips, ETA early-mid July 2026)
+## Phase 4 — Demo mode and portfolio (target of 40 full trips reached — ready to start)
 
 **Goal:** Make this presentable as a portfolio project without exposing personal location data.
 
-**Status:** 22 full commute trips as of 2026-05-27. Need ~18 more full trips at current pace (~10-12/month from weekday commutes).
+**Status:** 59 full commute trips as of 2026-08-09 — past the 40-trip threshold set for this phase. Work below can start whenever bandwidth allows.
 
 ### Synthetic demo mode (`generate_demo.py`)
 
@@ -137,5 +144,5 @@ The 40-trip threshold applies to commute optimisation specifically. The GPX reco
 
 - **OBD-II integration** — Hyundai Exter AMT does not expose standard OBD-II easily. Manual mileage from trip computer is sufficient.
 - **Automated GPX sync from Google Drive** — adds OAuth dependency for a one-minute manual step. Not worth it. (Future option: FolderSync app on Android for automatic phone→Drive sync)
-- **Scheduled runs** — `python main.py` is the trigger. No cron, no daemon, no Task Scheduler.
+- **Scheduled runs** — `python src/main.py` is the trigger. No cron, no daemon, no Task Scheduler.
 - **Real-time traffic overlay** — would require a paid maps API. Out of scope for personal project.

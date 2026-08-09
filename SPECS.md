@@ -246,6 +246,9 @@ Runs **before** trip classification. Scans backwards from GPX end for a trailing
 | `WALK_MAX_DISTANCE_M` | 1000.0 | Maximum walk distance — filters out slow traffic crawl |
 | `WALK_ANCHOR_RADIUS_M` | 150.0 | Fixed radius for walk origin anchor check — independent of config radii |
 | `WALK_GUARD_MIN_DURATION_MIN` | 20.0 | Minimum trip duration before walk detection runs |
+| `WALK_DRIFT_GAP_SECONDS` | 30.0 | Max allowed gap between consecutive walk-segment points before the walk is considered over |
+
+`WALK_DRIFT_GAP_SECONDS` prevents stationary GPS drift from inflating `walk_duration_mins`: once the phone stops moving (e.g. set down at a desk), OsmAnd keeps logging sparse near-zero-speed points that still read below the 7 km/h threshold. Since OsmAnd logs every 3-5s while genuinely moving, a gap wider than 30s between consecutive points signals the phone went stationary — the walk segment's end is capped at the last point before that gap, rather than running to the end of the GPX file.
 
 Walk detection fires when ALL conditions hold:
 1. Trip has ≥10 points and ≥20 minutes duration
@@ -321,6 +324,8 @@ OFFICE coordinates are used as the weather fetch location (commute destination a
 
 **Failure mode:** if Bluelink login or fetch fails for any reason, the error is logged and the pipeline continues. Bluelink is supplementary data — never blocks the pipeline.
 
+**Known issue (2026-08-09):** login currently fails on the India region. Hyundai's `/api/v1/user/signin` endpoint returns `{"step": 5, "upgrade": false}` instead of the `redirectUrl` the library expects, which surfaces as a generic `AuthenticationError("Login Failed")`. Confirmed on both `hyundai_kia_connect_api` 4.10.3 and 4.23.0 — not fixed by upgrading. Root cause is server-side (likely a new mandatory verification step for India accounts); see `data/issues/bluelink_github_issue.md` for the upstream bug report draft.
+
 ---
 
 ## petrol_prices.csv format
@@ -352,6 +357,7 @@ Add a new row each time the pump price changes. Do not modify existing rows.
 | `outputs/dashboard.html` | No | Plotly analytics dashboard |
 | `data/reference/petrol_prices.csv` | Yes | Fuel price reference (no personal data) |
 | `data/demo/` | Yes | Synthetic commuter data for portfolio demo |
+| `data/issues/` | No | Scratch notes, e.g. draft upstream bug reports |
 | `config.example.yaml` | Yes | Placeholder template |
 
 ---
