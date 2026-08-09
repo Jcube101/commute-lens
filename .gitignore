@@ -209,3 +209,6 @@ __marimo__/
 config.yaml
 data/gpx/
 outputs/
+
+# Claude Code local settings
+.claude/

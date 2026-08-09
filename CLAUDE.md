@@ -151,16 +151,16 @@ commute-lens/
     cluster.py               <- DBSCAN route clustering by path similarity, Nominatim labels
     analysis.py              <- generate_heatmap() and generate_dashboard()
     generate_demo.py         <- generates synthetic GPX files for portfolio demo mode
-    main.py                  <- "Go" button. Run: python main.py
+    main.py                  <- "Go" button. Run: python src/main.py
   data/demo/                 <- synthetic commuter data for portfolio (committed to GitHub)
   config.example.yaml        <- placeholder template (committed)
   config.yaml                <- real coordinates and settings (gitignored)
   requirements.txt
   CLAUDE.md                  <- this file
   README.md
-  learnings.md
-  specs.md
-  roadmap.md
+  LEARNINGS.md
+  SPECS.md
+  ROADMAP.md
   CONTRIBUTING.md
 ```
 

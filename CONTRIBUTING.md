@@ -13,6 +13,11 @@ commute-lens is designed around a specific Bengaluru commute but the core logic 
 ```bash
 git clone https://github.com/Jcube101/commute-lens.git
 cd commute-lens
+
+python -m venv .venv
+source .venv/bin/activate   # Windows PowerShell: .venv\Scripts\Activate.ps1
+                             # Windows Git Bash:   source .venv/Scripts/activate
+
 pip install -r requirements.txt
 ```
 
@@ -167,7 +172,7 @@ The pipeline processes only new files on each run — already-processed files ar
 ## Step 7: First run
 
 ```bash
-python main.py
+python src/main.py
 ```
 
 This will:

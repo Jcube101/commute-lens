@@ -11,6 +11,22 @@ It is designed around a real commute with unusual geometry: three anchor points 
 
 ---
 
+## Why this exists
+
+Google Maps (and every other live-routing app) answers one question well: **"how do I get there right now?"** It has no memory. Close the app after today's drive and every signal it just showed you — how long the Silk Board crawl actually cost you, whether last Tuesday's rain made things worse, whether leaving 15 minutes earlier is worth it on your specific route — is gone. There's no accumulation, no trend, no "compared to what."
+
+commute-lens exists to answer a different question: **"given everything I know about this commute, what should I actually do?"** That requires data that survives past a single trip:
+
+- **Distributional insight, not a single ETA.** Maps gives you one number for right now. This gives you the full spread of durations for a departure window, so you can see reliability (tight vs. wildly variable) instead of a single point estimate that might be the best or worst day you've ever had.
+- **Attribution, not just outcome.** When a trip runs long, this pipeline can tell you *why* — a genuine traffic slowdown, an unplanned stop, a walk from parking that ate 10 minutes, or rain that historically adds X minutes on this route. Maps just shows you were late.
+- **Personal geometry Maps doesn't model.** This commute has a parking quirk (a mall used as an overflow lot when office parking is full) and a mid-trip redirect scenario that no general-purpose routing app has any concept of. The classifier here is built around *this* commute's real shape, not a generic origin-destination pair.
+- **A record that compounds.** Every GPX file adds to a personal dataset that gets more useful over time — 10 trips give you a heatmap, 40 give you patterns, 200 give you a predictive departure-time model. Google Maps can't build you a model of your own commute because it doesn't keep your history in a form you can analyze.
+- **Fuel cost and mileage tracking**, tied to petrol price history and actual trip computer readings — something no routing app touches at all.
+
+In short: Maps optimizes a single trip in the moment. This optimizes the *pattern* of a repeated commute over months, using only data you own.
+
+---
+
 ## What it produces
 
 | Output | Description |
@@ -18,6 +34,36 @@ It is designed around a real commute with unusual geometry: three anchor points 
 | `master_trips.csv` | One row per trip — GPS-derived fields plus weather, mileage, fuel cost, stop locations, sheet notes |
 | `heatmap.html` | Speed-coloured road segments, green to red, built from all classified trips |
 | `dashboard.html` | Departure time buckets, route comparison, weekly trends, fuel cost breakdown |
+
+---
+
+## Quick start
+
+```bash
+git clone https://github.com/Jcube101/commute-lens.git
+cd commute-lens
+
+# Create and enter a virtual environment
+python -m venv .venv
+
+# Windows (PowerShell)
+.venv\Scripts\Activate.ps1
+# Windows (Git Bash)
+source .venv/Scripts/activate
+# macOS / Linux
+source .venv/bin/activate
+
+pip install -r requirements.txt
+
+cp config.example.yaml config.yaml
+# edit config.yaml with your anchor coordinates, vehicle, and sheet URL
+
+python src/main.py
+```
+
+Once you're done for the session, run `deactivate` to leave the virtual environment.
+
+This gets the pipeline running against your own commute data. For the full walkthrough — OsmAnd recording settings, anchor coordinate setup, sidecar sheet structure, and troubleshooting — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -42,19 +88,13 @@ OsmAnd GPX files
   petrol_prices.csv  — fuel price by date range
       |
       v
-  master_trips.csv   ��� enriched, one row per trip
+  master_trips.csv   — enriched, one row per trip
       |
       v
   cluster.py         — DBSCAN route clustering, labels via Nominatim
       |
       v
   analysis.py        — speed heatmap (Folium) + dashboard (Plotly)
-```
-
-Run the whole pipeline with one command:
-
-```
-python main.py
 ```
 
 ---
@@ -99,52 +139,6 @@ Detected stops are matched against named waypoints defined in `config.yaml`. If 
 
 ---
 
-## Setup
-
-### 1. Clone and install
-
-```bash
-git clone https://github.com/Jcube101/commute-lens.git
-cd commute-lens
-pip install -r requirements.txt
-```
-
-### 2. Configure
-
-```bash
-cp config.example.yaml config.yaml
-```
-
-Edit `config.yaml` and fill in:
-- Your home, office, and mall coordinates
-- (Optional) Waypoints for regular stops (shooting range, gym, etc.) — enriches stop detection without affecting trip classification
-- Your vehicle name and ARAI fuel economy baseline
-- Your Google Sheet CSV export URL (`sheet_csv_url`)
-- (Optional) Hyundai Bluelink credentials — fetches daily trip aggregates automatically
-
-### 3. Add GPX files
-
-Drop OsmAnd GPX files into `data/gpx/`. The parser handles new files incrementally — already-processed files are skipped on repeat runs.
-
-### 4. Seed petrol prices
-
-Edit `data/reference/petrol_prices.csv`:
-
-```
-from_date,to_date,price
-2026-04-13,,103.0
-```
-
-Leave `to_date` blank for the current price. Add a new row when the pump price changes.
-
-### 5. Run
-
-```bash
-python main.py
-```
-
----
-
 ## Demo — synthetic commuter profiles
 
 Don't have your own commute data yet? The repo includes a synthetic demo mode with 4 fictional Bengaluru commuter profiles built on real road geometry (via OSRM):
@@ -183,7 +177,7 @@ The interactive explorer lets you select a profile, toggle departure window and 
 - **Phase 5**: Junction bottleneck ranking, day-of-week variance, seasonal patterns
 - **Phase 6**: Predictive departure model, commute cost calculator, city-level traffic intelligence
 
-See [roadmap.md](roadmap.md) for detail.
+See [ROADMAP.md](ROADMAP.md) for detail.
 
 ---
 
