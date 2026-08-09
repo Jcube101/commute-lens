@@ -567,6 +567,11 @@ WALK_AMBIGUOUS_THRESHOLD_M = 55.0
 WALK_GUARD_MIN_DISTANCE_KM = 10.0
 WALK_GUARD_MIN_DURATION_MIN = 20.0
 
+# OsmAnd logs every 3-5s while moving. A gap wider than this means the phone
+# went stationary (arrived and set down) rather than continuing to walk —
+# those trailing drift points must not inflate walk_duration_mins.
+WALK_DRIFT_GAP_SECONDS = 30.0
+
 NEAR_OFFICE_MIN_M = 150.0
 NEAR_OFFICE_MAX_M = 800.0
 
@@ -615,12 +620,22 @@ def detect_and_truncate_walk(
 
     walk_start_idx = last_vehicle_idx + 1
     walk_start = points[walk_start_idx]
-    walk_duration = (points[-1].time - walk_start.time).total_seconds() / 60.0
+
+    # Stop counting the walk once logging gaps show the phone went
+    # stationary — only the continuously-logged walking phase counts.
+    walk_end_idx = walk_start_idx
+    for i in range(walk_start_idx + 1, len(points)):
+        gap = (points[i].time - points[i - 1].time).total_seconds()
+        if gap > WALK_DRIFT_GAP_SECONDS:
+            break
+        walk_end_idx = i
+
+    walk_duration = (points[walk_end_idx].time - walk_start.time).total_seconds() / 60.0
 
     if walk_duration < WALK_MIN_DURATION_MINS:
         return points, False, 0.0, None
 
-    walk_points = points[walk_start_idx:]
+    walk_points = points[walk_start_idx:walk_end_idx + 1]
     walk_dist = sum(
         haversine(walk_points[i].lat, walk_points[i].lon,
                   walk_points[i + 1].lat, walk_points[i + 1].lon)
